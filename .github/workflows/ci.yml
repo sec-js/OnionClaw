@@ -30,7 +30,7 @@ jobs:
 
       - name: Syntax check — scripts
         run: |
-          for f in scripts/*.py; do
+          for f in ask.py check_engines.py check_tor.py fetch.py pipeline.py renew.py search.py sync_sicry.py; do
             python3 -m py_compile "$f" && echo "$f OK"
           done
 
