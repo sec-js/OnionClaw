@@ -1,22 +1,42 @@
 ---
 name: onionclaw
-description: Search the Tor dark web, fetch .onion hidden service pages, rotate Tor identity, and run structured OSINT investigations. Use when user asks to search dark web, investigate .onion sites, find if data appeared on dark web, conduct Tor-based OSINT, look up dark web leaks, or fetch any .onion URL.
+description: Search the Tor dark web, fetch .onion hidden service pages, rotate Tor identity, and run structured OSINT investigations. Use when user asks to search dark web, investigate .onion sites, find if data appeared on dark web, conduct Tor-based OSINT, look up dark web leaks, fetch any .onion URL, check for leaked credentials, or investigate ransomware groups.
 homepage: https://github.com/JacobJandon/OnionClaw
 metadata:
   {
     "openclaw": {
       "emoji": "🧅",
       "os": ["darwin", "linux"],
-      "requires": { "bins": ["python3"] }
+      "requires": {
+        "bins": ["python3", "pip3"],
+        "pip": ["requests[socks]", "beautifulsoup4", "python-dotenv", "stem"]
+      },
+      "version": "1.0.0",
+      "author": "JacobJandon",
+      "license": "MIT",
+      "repo": "https://github.com/JacobJandon/OnionClaw"
     }
   }
 ---
 
 # OnionClaw — Tor / Dark Web Access
 
+**by JacobJandon** · MIT License · [github.com/JacobJandon/OnionClaw](https://github.com/JacobJandon/OnionClaw)
+
 OnionClaw routes all requests through the Tor network. It searches 18 dark web search engines simultaneously, fetches .onion hidden service pages, rotates Tor circuits, and produces structured OSINT reports using the Robin investigation pipeline.
 
-## Prerequisites
+## Setup (run once after install)
+
+Install Python dependencies:
+```bash
+pip3 install requests[socks] beautifulsoup4 python-dotenv stem
+```
+
+Copy and configure `.env`:
+```bash
+cp {baseDir}/.env.example {baseDir}/.env
+# Edit {baseDir}/.env — add LLM_PROVIDER + API key (optional; search and fetch work without one)
+```
 
 Before any dark web operation, Tor must be running locally:
 ```bash
@@ -26,13 +46,6 @@ apt install tor && tor &
 # macOS
 brew install tor && tor &
 ```
-
-Python dependencies (one-time):
-```bash
-pip install requests[socks] beautifulsoup4 python-dotenv stem
-```
-
-LLM key in `{baseDir}/.env` — copy from `{baseDir}/.env.example`.
 
 ---
 

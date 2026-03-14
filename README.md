@@ -1,5 +1,9 @@
 # OnionClaw 🧅
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/JacobJandon/OnionClaw/blob/main/LICENSE)
+[![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-blue)](https://github.com/JacobJandon/OnionClaw/blob/main/SKILL.md)
+
+**by [JacobJandon](https://github.com/JacobJandon)**
 
 <p align="center">
   <img src="OnionClawTransparent.png" alt="OnionClaw logo" width="200"/>
@@ -502,6 +506,12 @@ OnionClaw/
 - .onion address verification via [dark.fail](https://dark.fail)
 - Agent runtime: [OpenClaw](https://github.com/openclaw/openclaw)
 - Network anonymisation: [Tor Project](https://www.torproject.org/)
+
+## License
+
+MIT License — Copyright (c) 2026 JacobJandon
+
+The "OnionClaw" name and logo are owned by JacobJandon. The MIT licence applies to all source code in this repository. See [LICENSE](LICENSE) for details.
 
 ---
 
