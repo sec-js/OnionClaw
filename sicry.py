@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
+from __future__ import annotations
 
 __version__ = "1.0.0"
 
@@ -42,8 +43,6 @@ MCP server config (Claude Desktop / Cursor / Zed / any MCP client):
 Powered by Robin's engine catalogue (github.com/apurvsinghgautam/robin, MIT).
 Use responsibly and lawfully.
 """
-
-from __future__ import annotations
 
 import json
 import logging

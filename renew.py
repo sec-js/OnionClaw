@@ -8,7 +8,7 @@ Rotate the Tor circuit and get a new exit node / identity.
 import sys, os, json
 
 # ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_skill_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _skill_dir)
 
 _env = os.path.join(_skill_dir, ".env")

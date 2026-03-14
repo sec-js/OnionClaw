@@ -15,7 +15,7 @@ Modes: threat_intel (default), ransomware, personal_identity, corporate
 import sys, os, argparse
 
 # ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_skill_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _skill_dir)
 
 _env = os.path.join(_skill_dir, ".env")

@@ -22,7 +22,7 @@ except Exception as _e:
     sys.exit(1)
 
 UPSTREAM_RAW = "https://raw.githubusercontent.com/JacobJandon/Sicry/{ref}/sicry.py"
-DEST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sicry.py")
+DEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sicry.py")
 
 
 def main():

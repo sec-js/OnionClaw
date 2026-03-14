@@ -13,7 +13,7 @@ Usage:
 import sys, os, json, argparse
 
 # ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_skill_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _skill_dir)
 
 _env = os.path.join(_skill_dir, ".env")
