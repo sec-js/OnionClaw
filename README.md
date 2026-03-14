@@ -1,6 +1,7 @@
 # OnionClaw 🧅
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/JacobJandon/OnionClaw/blob/main/LICENSE)
+[![CI](https://github.com/JacobJandon/OnionClaw/actions/workflows/ci.yml/badge.svg)](https://github.com/JacobJandon/OnionClaw/actions/workflows/ci.yml)
 [![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-blueviolet)](https://github.com/JacobJandon/OnionClaw)
 
 **by JacobJandon**
