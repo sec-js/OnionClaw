@@ -23,7 +23,7 @@ metadata:
 
 **by JacobJandon** · MIT License · [github.com/JacobJandon/OnionClaw](https://github.com/JacobJandon/OnionClaw)
 
-OnionClaw routes all requests through the Tor network. It searches 18 dark web search engines simultaneously, fetches .onion hidden service pages, rotates Tor circuits, and produces structured OSINT reports using the Robin investigation pipeline.
+OnionClaw routes all requests through the Tor network. It searches 12 verified-live dark web search engines simultaneously, fetches .onion hidden service pages, rotates Tor circuits, and produces structured OSINT reports using the Robin investigation pipeline.
 
 ## Setup (run once after install)
 
@@ -32,7 +32,12 @@ Install Python dependencies:
 pip3 install requests[socks] beautifulsoup4 python-dotenv stem
 ```
 
-Copy and configure `.env`:
+Run the interactive first-run wizard (sets up `.env` and torrc in one step):
+```bash
+python3 {baseDir}/setup.py
+```
+
+Or set up manually:
 ```bash
 cp {baseDir}/.env.example {baseDir}/.env
 # Edit {baseDir}/.env — add LLM_PROVIDER + API key (optional; search and fetch work without one)
@@ -40,8 +45,17 @@ cp {baseDir}/.env.example {baseDir}/.env
 
 Start Tor (required before any command):
 ```bash
-# Linux:  apt install tor && tor &
-# macOS:  brew install tor && tor &
+# Linux:  sudo apt install tor && sudo systemctl start tor
+# macOS:  brew install tor && brew services start tor
+# Custom: tor -f /tmp/tor_data/torrc &   (setup.py creates this)
+```
+
+Enable circuit rotation (ControlPort) — required for `renew.py`:
+```
+Add to /etc/tor/torrc:
+  ControlPort 9051
+  CookieAuthentication 1
+Then restart Tor.  setup.py does this automatically.
 ```
 
 ---
@@ -74,7 +88,7 @@ Output: `success: true/false`. If false, the user needs to ensure ControlPort 90
 
 ### Search the dark web
 
-Search all 18 dark web engines simultaneously. Returns deduplicated `{title, url, engine}` results.
+Search all 12 verified-live dark web engines simultaneously. Returns deduplicated `{title, url, engine}` results.
 
 **Basic search:**
 ```bash
@@ -91,7 +105,7 @@ python3 {baseDir}/search.py --query "SEARCH_TERM" --max 30
 python3 {baseDir}/search.py --query "SEARCH_TERM" --engines Ahmia Tor66 Ahmia-clearnet
 ```
 
-Available engines: Ahmia, OnionLand, Torgle, Amnesia, Kaizer, Anima, Tornado, TorNet, Torland, FindTor, Excavator, Onionway, Tor66, OSS, Torgol, TheDeepSearches, DuckDuckGo-Tor, Ahmia-clearnet
+Available engines: Ahmia, OnionLand, Amnesia, Torland, Excavator, Onionway, Tor66, OSS, Torgol, TheDeepSearches, DuckDuckGo-Tor, Ahmia-clearnet
 
 **Tip:** Use short keyword queries (≤5 words). Dark web indexes respond better to focused keywords than natural-language questions.
 
@@ -111,7 +125,7 @@ Output: title, text (first 3000 chars), link list, HTTP status. If status is 0 o
 
 ### Check which search engines are alive
 
-Ping all 18 engines via Tor and get latency + status for each.
+Ping all 12 engines via Tor and get latency + status for each.
 
 ```bash
 python3 {baseDir}/check_engines.py
@@ -169,6 +183,11 @@ python3 {baseDir}/pipeline.py --query "INVESTIGATION_QUERY" --mode MODE
 python3 {baseDir}/pipeline.py --query "INVESTIGATION_QUERY" --mode ransomware --max 50 --scrape 10
 ```
 
+**Without an LLM key (raw results only):**
+```bash
+python3 {baseDir}/pipeline.py --query "INVESTIGATION_QUERY" --no-llm
+```
+
 **Options:**
 - `--query` — investigation topic (natural language OK — it gets refined automatically)
 - `--mode` — `threat_intel` (default), `ransomware`, `personal_identity`, `corporate`
@@ -176,6 +195,7 @@ python3 {baseDir}/pipeline.py --query "INVESTIGATION_QUERY" --mode ransomware --
 - `--scrape` — how many pages to batch-fetch (default 8)
 - `--custom` — custom LLM instructions appended to the mode prompt
 - `--out FILE` — write final report to a file
+- `--no-llm` — skip refine/filter/ask steps; dump raw scraped content (no API key needed)
 
 ---
 

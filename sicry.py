@@ -2,7 +2,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 """
 SICRY — Tor/Onion Network Access Layer for AI Agents
@@ -15,7 +15,7 @@ One file. No Robin install needed. Robin's patterns are baked in.
 
 Five core tools — same interface as regular-internet equivalents:
   check_tor()                     — ping / verify Tor
-  check_search_engines()          — ping all 18 engines, get latency
+  check_search_engines()          — ping all 12 engines, get latency
   search(query)                   — web_search() but for .onion
   fetch(url)                      — fetch_url() but via Tor
   ask(content, mode, ...)         — analyze() / LLM OSINT report
@@ -101,6 +101,7 @@ TOR_CONTROL_PASS   = os.getenv("TOR_CONTROL_PASSWORD")
 TOR_DATA_DIR       = os.getenv("TOR_DATA_DIR")   # optional: path to Tor DataDirectory for cookie auth
 TOR_TIMEOUT        = int(os.getenv("TOR_TIMEOUT", "45"))
 MAX_CONTENT_CHARS  = int(os.getenv("SICRY_MAX_CHARS", "8000"))
+FETCH_CACHE_TTL    = int(os.getenv("SICRY_CACHE_TTL", "600"))  # seconds; 0 disables
 
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o")
@@ -112,6 +113,11 @@ OLLAMA_URL         = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL       = os.getenv("OLLAMA_MODEL", "llama3.2")
 LLAMACPP_URL       = os.getenv("LLAMACPP_BASE_URL", "http://127.0.0.1:8080")
 LLM_PROVIDER       = os.getenv("LLM_PROVIDER", "openai")
+
+# ─────────────────────────────────────────────────────────────────
+# FETCH CACHE  (keyed by normalised URL; evicted after FETCH_CACHE_TTL)
+# ─────────────────────────────────────────────────────────────────
+_FETCH_CACHE: dict[str, tuple[float, dict]] = {}
 
 # ─────────────────────────────────────────────────────────────────
 # ROTATING USER AGENTS  (same pool Robin uses)
@@ -129,21 +135,17 @@ _USER_AGENTS = [
 ]
 
 # ─────────────────────────────────────────────────────────────────
-# SEARCH ENGINES  (Robin's full catalogue of .onion indexes)
+# SEARCH ENGINES  (12 verified-live .onion indexes)
+# Removed permanently-dead engines: Torgle, Kaizer, Anima, Tornado,
+# TorNet, FindTor (all ceased responding as of 2026-Q1).
 # Source: github.com/apurvsinghgautam/robin — MIT License
 # ─────────────────────────────────────────────────────────────────
 
 SEARCH_ENGINES = [
     {"name": "Ahmia",            "url": "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/search/?q={query}"},
     {"name": "OnionLand",        "url": "http://3bbad7fauom4d6sgppalyqddsqbf5u5p56b5k5uk2zxsy3d6ey2jobad.onion/search?q={query}"},
-    {"name": "Torgle",           "url": "http://iy3544gmoeclh5de6gez2256v6pjh4omhpqdh2wpeeppjtvqmjhkfwad.onion/torgle/?query={query}"},
     {"name": "Amnesia",          "url": "http://amnesia7u5odx5xbwtpnqk3edybgud5bmiagu75bnqx2crntw5kry7ad.onion/search?query={query}"},
-    {"name": "Kaizer",           "url": "http://kaizerwfvp5gxu6cppibp7jhcqptavq3iqef66wbxenh6a2fklibdvid.onion/search?q={query}"},
-    {"name": "Anima",            "url": "http://anima4ffe27xmakwnseih3ic2y7y3l6e7fucwk4oerdn4odf7k74tbid.onion/search?q={query}"},
-    {"name": "Tornado",          "url": "http://tornadoxn3viscgz647shlysdy7ea5zqzwda7hierekeuokh5eh5b3qd.onion/search?q={query}"},
-    {"name": "TorNet",           "url": "http://tornetupfu7gcgidt33ftnungxzyfq2pygui5qdoyss34xbgx2qruzid.onion/search?q={query}"},
     {"name": "Torland",          "url": "http://torlbmqwtudkorme6prgfpmsnile7ug2zm4u3ejpcncxuhpu4k2j4kyd.onion/index.php?a=search&q={query}"},
-    {"name": "FindTor",          "url": "http://findtorroveq5wdnipkaojfpqulxnkhblymc7aramjzajcvpptd4rjqd.onion/search?q={query}"},
     {"name": "Excavator",        "url": "http://2fd6cemt4gmccflhm6imvdfvli3nf7zn6rfrwpsy7uhxrgbypvwf5fad.onion/search?query={query}"},
     {"name": "Onionway",         "url": "http://oniwayzz74cv2puhsgx4dpjwieww4wdphsydqvf5q7eyz4myjvyw26ad.onion/search.php?s={query}"},
     {"name": "Tor66",            "url": "http://tor66sewebgixwhcqfnp5inzp5x5uohhdy3kvtnyfxc2e5mxiuh34iid.onion/search?q={query}"},
@@ -285,14 +287,23 @@ def renew_identity() -> dict:
         return {"success": False, "error": str(e)}
 
 
-def fetch(url: str) -> dict:
+def fetch(url: str, _use_cache: bool = True) -> dict:
     """
     Fetch any URL through Tor — clearnet OR .onion.
     The exact same as calling fetch_url() or browser_read_page() in a
     clearnet AI agent, but now works for hidden services.
 
+    Improvements over a plain requests.get:
+      - TTL cache (SICRY_CACHE_TTL env var, default 10 min) — avoids redundant
+        Tor round-trips for the same URL within a session.
+      - HTTPS → HTTP automatic fallback for .onion addresses that don't serve
+        TLS (most hidden services are HTTP-only).
+      - SOCKS-level retry — if a SOCKS5 handshake or circuit times out, the
+        function builds a fresh session and retries once before giving up.
+
     Args:
-        url: Any http/https URL or .onion address.
+        url:        Any http/https URL or .onion address.
+        _use_cache: Set False to bypass the TTL cache (e.g. forced refresh).
 
     Returns:
         {
@@ -313,11 +324,25 @@ def fetch(url: str) -> dict:
         url = "http://" + url
 
     is_onion = ".onion" in (urlparse(url).hostname or "")
-    headers = {"User-Agent": random.choice(_USER_AGENTS)}
-    session = _build_tor_session()
 
-    try:
-        resp = session.get(url, headers=headers, timeout=TOR_TIMEOUT)
+    # ── TTL cache check ──────────────────────────────────────────
+    cache_key = url.lower().rstrip("/")
+    if _use_cache and FETCH_CACHE_TTL > 0 and cache_key in _FETCH_CACHE:
+        _cached_ts, _cached_result = _FETCH_CACHE[cache_key]
+        if time.time() - _cached_ts < FETCH_CACHE_TTL:
+            return _cached_result
+
+    headers = {"User-Agent": random.choice(_USER_AGENTS)}
+
+    # ── URL attempt list: try HTTPS first, then fall back to HTTP for .onion ─
+    urls_to_try: list[str] = [url]
+    if url.startswith("https://") and is_onion:
+        urls_to_try.append("http://" + url[8:])
+
+    last_err: str = "unknown error"
+
+    def _parse_response(resp: requests.Response, final_url: str) -> dict:
+        """Extract title / text / links from a successful HTTP response."""
         html = resp.text
         soup = BeautifulSoup(html, "html.parser")
 
@@ -327,11 +352,11 @@ def fetch(url: str) -> dict:
 
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
-        text = re.sub(r"\n{3,}", "\n\n", soup.get_text(separator="\n")).strip()
-        text = text[:MAX_CONTENT_CHARS]
+        body_text = re.sub(r"\n{3,}", "\n\n", soup.get_text(separator="\n")).strip()
+        body_text = body_text[:MAX_CONTENT_CHARS]
 
-        base = urlparse(url)
-        links = []
+        base = urlparse(final_url)
+        links: list[dict] = []
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
             if href.startswith("/"):
@@ -340,15 +365,37 @@ def fetch(url: str) -> dict:
                 links.append({"text": a.get_text(strip=True), "href": href})
 
         return {
-            "url": url, "is_onion": is_onion, "status": resp.status_code,
-            "title": title, "text": text, "links": links[:80], "error": None,
+            "url": final_url, "is_onion": is_onion, "status": resp.status_code,
+            "title": title, "text": body_text, "links": links[:80], "error": None,
         }
 
-    except Exception as e:
-        return {
-            "url": url, "is_onion": is_onion, "status": 0,
-            "title": None, "text": "", "links": [], "error": str(e),
-        }
+    for attempt_url in urls_to_try:
+        # ── SOCKS-level retry: 2 attempts per URL variant ────────
+        for socks_attempt in range(2):
+            try:
+                session = _build_tor_session()
+                resp = session.get(attempt_url, headers=headers, timeout=TOR_TIMEOUT)
+                result = _parse_response(resp, attempt_url)
+                # Store in cache on success
+                if _use_cache and FETCH_CACHE_TTL > 0:
+                    _FETCH_CACHE[cache_key] = (time.time(), result)
+                return result
+            except Exception as exc:
+                last_err = str(exc)
+                _is_socks_err = any(kw in last_err for kw in
+                                    ("SOCKS", "timed out", "Connection refused",
+                                     "RemoteDisconnected", "ConnectionError"))
+                if socks_attempt == 0 and _is_socks_err:
+                    # Brief pause, then retry on a fresh circuit
+                    time.sleep(1.5)
+                    continue
+                # Non-retryable error or second attempt — move to next URL variant
+                break
+
+    return {
+        "url": url, "is_onion": is_onion, "status": 0,
+        "title": None, "text": "", "links": [], "error": last_err,
+    }
 
 
 def scrape_all(urls: list[dict], max_workers: int = 5) -> dict:

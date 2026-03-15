@@ -7,6 +7,35 @@ Versioning follows [Semantic Versioning](https://semver.org).
 
 ---
 
+## [1.1.0] — 2026-03-15
+
+### Added
+- `setup.py` — first-run wizard: auto-creates `.env`, patches/creates `torrc`
+  with `ControlPort 9051 + CookieAuthentication 1`, checks Python deps
+- `pipeline.py --no-llm` flag — skips refine/filter/ask LLM steps; outputs raw
+  scraped content without requiring an API key
+- `SICRY_CACHE_TTL` env var (default 600 s) to `.env.example`
+
+### Changed
+- SKILL.md: updated engine count 18 → 12, removed dead engine names,
+  added `--no-llm` to pipeline options, updated setup instructions
+
+### Fixed
+- SKILL.md setup section now references `setup.py` for first-run ease
+
+### Bundled SICRY™
+- Version 1.1.0
+- Removed 6 permanently-dead engines: Torgle, Kaizer, Anima, Tornado,
+  TorNet, FindTor
+- `fetch()` HTTPS → HTTP automatic fallback for `.onion` addresses that
+  don't serve TLS
+- `fetch()` SOCKS-level retry: rebuilds session and retries once on
+  SOCKS5 handshake or circuit timeout before giving up
+- `fetch()` TTL result cache (`_FETCH_CACHE`, keyed by normalised URL,
+  evicted after `FETCH_CACHE_TTL` seconds; avoids redundant Tor round-trips)
+
+---
+
 ## [1.0.0] — 2026-03-14
 
 ### Added

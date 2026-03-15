@@ -54,13 +54,18 @@ parser.add_argument("--out",    default=None,
                     help="Write final report to this file")
 parser.add_argument("--engines", nargs="*", metavar="ENGINE",
                     help="Limit search to specific engines (default: check live first)")
+parser.add_argument("--no-llm",  action="store_true",
+                    help="Skip all LLM steps (refine, filter, ask). Outputs raw scraped text. "
+                         "Useful when no API key is configured.")
 args = parser.parse_args()
+
+NO_LLM = args.no_llm
 
 def _step(n, total, label):
     print(f"\n[{n}/{total}] {label}")
     print("─" * 55)
 
-TOTAL = 7
+TOTAL = 4 if NO_LLM else 7  # steps 3, 5, 7 are LLM-only
 
 # ──────────────────────────────────────────────────────────────────
 # Step 1: Verify Tor
@@ -100,21 +105,26 @@ else:
     _step(2, TOTAL, f"Using specified engines: {', '.join(live_names)}")
 
 # ──────────────────────────────────────────────────────────────────
-# Step 3: Refine query (Robin quality pattern)
+# Step 3: Refine query (LLM step — skipped with --no-llm)
 # ──────────────────────────────────────────────────────────────────
-_step(3, TOTAL, "Refine query")
 raw_query = args.query
-refined = sicry.refine_query(raw_query)
-if refined != raw_query:
-    print(f"  Original : {raw_query}")
-    print(f"  Refined  : {refined}")
+if NO_LLM:
+    refined = raw_query
+    print(f"\n[–/–] Query refinement skipped (--no-llm)")
+    print(f"    Query: {refined}")
 else:
-    print(f"  Query    : {refined}  (no LLM key — using as-is)")
+    _step(3, TOTAL, "Refine query")
+    refined = sicry.refine_query(raw_query)
+    if refined != raw_query:
+        print(f"  Original : {raw_query}")
+        print(f"  Refined  : {refined}")
+    else:
+        print(f"  Query    : {refined}  (no LLM key — using as-is)")
 
 # ──────────────────────────────────────────────────────────────────
 # Step 4: Search
 # ──────────────────────────────────────────────────────────────────
-_step(4, TOTAL, f"Search {len(live_names)} engines for: \"{refined}\"")
+_step(3 if NO_LLM else 4, TOTAL, f"Search {len(live_names)} engines for: \"{refined}\"")
 raw_results = sicry.search(refined, engines=live_names, max_results=args.max)
 print(f"✓ {len(raw_results)} raw results (deduplicated)")
 if not raw_results:
@@ -126,19 +136,23 @@ if len(raw_results) > 5:
     print(f"  ... and {len(raw_results) - 5} more")
 
 # ──────────────────────────────────────────────────────────────────
-# Step 5: Filter to best results (Robin quality pattern)
+# Step 5: Filter to best results (LLM step — skipped with --no-llm)
 # ──────────────────────────────────────────────────────────────────
-_step(5, TOTAL, "Filter to most relevant results")
-best = sicry.filter_results(refined, raw_results)
-print(f"✓ {len(best)} most relevant results selected")
-if len(best) == len(raw_results[:20]):
-    print("  (no LLM key — using top 20 by position)")
+if NO_LLM:
+    best = raw_results[:20]
+    print(f"\n[–/–] Result filtering skipped (--no-llm) — using top {len(best)} results")
+else:
+    _step(5, TOTAL, "Filter to most relevant results")
+    best = sicry.filter_results(refined, raw_results)
+    print(f"✓ {len(best)} most relevant results selected")
+    if len(best) == len(raw_results[:20]):
+        print("  (no LLM key — using top 20 by position)")
 
 # ──────────────────────────────────────────────────────────────────
 # Step 6: Batch scrape
 # ──────────────────────────────────────────────────────────────────
 scrape_count = min(args.scrape, len(best))
-_step(6, TOTAL, f"Batch-scrape top {scrape_count} pages concurrently")
+_step(4 if NO_LLM else 6, TOTAL, f"Batch-scrape top {scrape_count} pages concurrently")
 pages = sicry.scrape_all(best[:scrape_count], max_workers=5)
 print(f"✓ {len(pages)}/{scrape_count} pages scraped successfully")
 if len(pages) < scrape_count:
@@ -151,44 +165,64 @@ if not pages:
     sys.exit(0)
 
 # ──────────────────────────────────────────────────────────────────
-# Step 7: OSINT analysis
+# Step 7: OSINT analysis (LLM step — skipped with --no-llm)
 # ──────────────────────────────────────────────────────────────────
-_step(7, TOTAL, f"OSINT analysis — mode: {args.mode}")
-combined = "\n\n".join(f"[SOURCE: {url}]\n{text}" for url, text in pages.items())
-report = sicry.ask(
-    combined,
-    query=refined,
-    mode=args.mode,
-    custom_instructions=args.custom,
-)
-
-print()
-if report.startswith("[SICRY:"):
-    print("✗ LLM error:", report)
+if NO_LLM:
+    print(f"\n[–/–] LLM analysis skipped (--no-llm)")
     print()
-    print("  Set LLM_PROVIDER and API key in", os.path.join(_skill_dir, ".env"))
-    print("  The scraped content is available even without an LLM key.")
+    print("=" * 55)
+    print("SCRAPED CONTENT (raw, no LLM analysis)")
+    print("=" * 55)
+    for url, text in pages.items():
+        print(f"\n[SOURCE: {url}]")
+        print(text[:2000])
+    if args.out:
+        try:
+            with open(args.out, "w") as f:
+                f.write(f"# OnionClaw OSINT Report (no-LLM)\n\n")
+                f.write(f"**Query:** {args.query}\n\n")
+                for url, text in pages.items():
+                    f.write(f"## {url}\n\n{text}\n\n")
+            print(f"\nReport saved to: {args.out}")
+        except OSError as e:
+            print(f"\nWARN: could not write output file: {e}")
+else:
+    _step(7, TOTAL, f"OSINT analysis — mode: {args.mode}")
+    combined = "\n\n".join(f"[SOURCE: {url}]\n{text}" for url, text in pages.items())
+    report = sicry.ask(
+        combined,
+        query=refined,
+        mode=args.mode,
+        custom_instructions=args.custom,
+    )
+
     print()
-    print("  Scraped URLs:")
-    for url in pages:
-        print(f"    {url}")
-    sys.exit(1)
+    if report.startswith("[SICRY:"):
+        print("✗ LLM error:", report)
+        print()
+        print("  Set LLM_PROVIDER and API key in", os.path.join(_skill_dir, ".env"))
+        print("  Tip: re-run with --no-llm to get raw scraped content without needing an API key.")
+        print()
+        print("  Scraped URLs:")
+        for url in pages:
+            print(f"    {url}")
+        sys.exit(1)
 
-print("=" * 55)
-print("INVESTIGATION REPORT")
-print("=" * 55)
-print(report)
+    print("=" * 55)
+    print("INVESTIGATION REPORT")
+    print("=" * 55)
+    print(report)
 
-if args.out:
-    try:
-        with open(args.out, "w") as f:
-            f.write(f"# OnionClaw OSINT Report\n\n")
-            f.write(f"**Query:** {args.query}\n")
-            f.write(f"**Mode:** {args.mode}\n\n")
-            f.write(report)
-        print(f"\nReport saved to: {args.out}")
-    except OSError as e:
-        print(f"\nWARN: could not write output file: {e}")
+    if args.out:
+        try:
+            with open(args.out, "w") as f:
+                f.write(f"# OnionClaw OSINT Report\n\n")
+                f.write(f"**Query:** {args.query}\n")
+                f.write(f"**Mode:** {args.mode}\n\n")
+                f.write(report)
+            print(f"\nReport saved to: {args.out}")
+        except OSError as e:
+            print(f"\nWARN: could not write output file: {e}")
 
 # ── Rotate identity when done ──────────────────────────────────────
 sicry.renew_identity()
