@@ -7,7 +7,7 @@
 **by JacobJandon**
 
 <p align="center">
-  <img src="OnionClawTransparent.png" alt="OnionClaw logo" width="200"/>
+  <img src="OnionClaw-logo.png" alt="OnionClaw logo" width="200"/>
 </p>
 
 > **OpenClaw skill + standalone tool** — full Tor / dark web access for AI agents
@@ -105,7 +105,7 @@ pip install requests[socks] beautifulsoup4 python-dotenv stem
 
 ```bash
 # Option A — clone directly
-git clone https://github.com/Ps3wb4n/OnionClaw ~/.openclaw/skills/onionclaw
+git clone https://github.com/JacobJandon/OnionClaw ~/.openclaw/skills/onionclaw
 
 # Option B — copy local folder
 cp -r OnionClaw ~/.openclaw/skills/onionclaw
@@ -503,7 +503,7 @@ OnionClaw/
 ## Credits
 
 - Dark web search engine list and Robin OSINT pipeline from [Robin](https://github.com/apurvsinghgautam/robin) by [@apurvsinghgautam](https://github.com/apurvsinghgautam) — MIT licence
-- Core engine: [SICRY](https://github.com/Ps3wb4n/Sicry)
+- Core engine: [SICRY](https://github.com/JacobJandon/Sicry)
 - .onion address verification via [dark.fail](https://dark.fail)
 - Agent runtime: [OpenClaw](https://github.com/openclaw/openclaw)
 - Network anonymisation: [Tor Project](https://www.torproject.org/)
