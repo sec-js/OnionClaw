@@ -3,12 +3,13 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/OnionClaw
 """
 OnionClaw — search.py
-Search 18 dark web search engines simultaneously.
+Search 12 active dark web search engines simultaneously.
 
 Usage:
   python3 search.py --query "TERM"
   python3 search.py --query "TERM" --max 30
   python3 search.py --query "TERM" --engines Ahmia Tor66 Ahmia-clearnet
+  python3 search.py --query "TERM" --json          # machine-readable output only
 """
 import sys, os, json, argparse
 
@@ -35,41 +36,56 @@ except Exception as _e:
         print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
     sys.exit(1)
 
-parser = argparse.ArgumentParser(description="Search 18 dark web engines via Tor")
+parser = argparse.ArgumentParser(description="Search 12 active dark web engines via Tor")
 parser.add_argument("--query",   required=True, help="Search query (≤5 keywords works best)")
 parser.add_argument("--max",     type=int, default=20, help="Max results (default 20)")
 parser.add_argument("--engines", nargs="*", metavar="ENGINE",
-                    help="Specific engines (default: all 18). E.g: Ahmia Tor66 Ahmia-clearnet")
+                    help="Specific engines (default: all 12). E.g: Ahmia Tor66 Ahmia-clearnet")
+parser.add_argument("--json",    action="store_true",
+                    help="Output raw JSON only — no human-readable headers")
 args = parser.parse_args()
 
-print(f"Searching dark web: \"{args.query}\"")
+# BUG-5: reject blank queries immediately
+if not args.query.strip():
+    print("ERROR: --query cannot be empty", file=sys.stderr)
+    sys.exit(1)
+
+# BUG-4: validate engine names before searching
 if args.engines:
-    print(f"Engines : {', '.join(args.engines)}")
+    known_names = {e["name"].lower() for e in getattr(sicry, "SEARCH_ENGINES", [])}
+    bad = [n for n in args.engines if n.lower() not in known_names] if known_names else []
+    valid = [n for n in args.engines if n.lower() in known_names] if known_names else args.engines
+    if bad and not args.json:
+        print(f"WARN: unknown engine name(s): {', '.join(bad)}", file=sys.stderr)
+    if not valid:
+        print(f"ERROR: none of the specified engines are known. "
+              f"Known: {', '.join(e['name'] for e in getattr(sicry, 'SEARCH_ENGINES', []))}",
+              file=sys.stderr)
+        sys.exit(1)
+    engines_to_use = valid
 else:
-    print(f"Engines : all 18")
-print()
+    engines_to_use = None
 
-# Validate engine names before searching
-if args.engines:
-    known = {e["name"].lower() for e in getattr(sicry, "SEARCH_ENGINES", [])}
-    bad = [n for n in args.engines if n.lower() not in known] if known else []
-    if bad:
-        print(f"WARN: unknown engine name(s): {', '.join(bad)}")
-        valid = [e["name"] for e in getattr(sicry, "SEARCH_ENGINES", []) if e["name"].lower() in {x.lower() for x in args.engines}]
-        print(f"      Valid supplied engines: {valid or 'none — will search all'}")
+if not args.json:
+    print(f'Searching dark web: "{args.query}"')
+    if engines_to_use:
+        print(f"Engines : {', '.join(engines_to_use)}")
+    else:
+        print("Engines : all 12")
+    print()
 
-results = sicry.search(args.query, engines=args.engines, max_results=args.max)
+results = sicry.search(args.query, engines=engines_to_use, max_results=args.max)
+
+if args.json:
+    print(json.dumps(results, indent=2))
+    sys.exit(0)
 
 if not results:
     print("No results found.")
-    print("Try: check_engines.py first to see which engines are alive.")
-    print(json.dumps([], indent=2))
+    print("Tip: run check_engines.py first to see which engines are alive.")
     sys.exit(0)
 
 print(f"Found {len(results)} results:\n")
 for i, r in enumerate(results, 1):
     print(f"  {i:>2}. [{r.get('engine', '?')}] {r.get('title', '(no title)')}")
     print(f"       {r.get('url', '')}")
-
-print()
-print(json.dumps(results, indent=2))

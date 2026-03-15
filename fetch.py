@@ -7,8 +7,7 @@ Fetch any URL or .onion hidden service through Tor.
 
 Usage:
   python3 fetch.py --url "http://example.onion"
-  python3 fetch.py --url "http://example.onion" --links
-"""
+  python3 fetch.py --url "http://example.onion" --links  python3 fetch.py --url "http://example.onion" --json   # machine-readable only"""
 import sys, os, json, argparse
 
 # ── bootstrap ─────────────────────────────────────────────────────
@@ -45,8 +44,11 @@ if not url.startswith(("http://", "https://")):
     url = "http://" + url
 
 is_onion = ".onion" in url
-print(f"Fetching {'[.onion]' if is_onion else '[clearnet via Tor]'}: {url}")
-print()
+
+# BUG-2: only print human header when not in --json mode
+if not args.json:
+    print(f"Fetching {'[.onion]' if is_onion else '[clearnet via Tor]'}: {url}")
+    print()
 
 result = sicry.fetch(url)
 
@@ -72,8 +74,13 @@ print("CONTENT")
 print("─" * 60)
 content = result.get("text", "")
 print(content[:4000])
-if len(content) > 4000:
-    print(f"\n... [{len(content) - 4000} more chars — use --json for full output]")
+# BUG-3: show truncation indicator from result dict (set by sicry.fetch)
+if result.get("truncated"):
+    overflow = len(content) - 4000
+    if overflow > 0:
+        print(f"\n... [{overflow} more chars — use --json for full output]")
+    else:
+        print("\n... [content was truncated by SICRY_MAX_CHARS limit — use --json for full text]")
 
 if args.links and result.get("links"):
     print()
@@ -84,6 +91,3 @@ if args.links and result.get("links"):
         label = link.get("text", "").strip() or "(no label)"
         href  = link.get("href", "")
         print(f"  {label[:50]:<50}  {href}")
-
-print()
-print(json.dumps(result, indent=2))

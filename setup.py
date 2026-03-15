@@ -283,6 +283,46 @@ def _verify_controlport():
     except Exception:
         _p("✗ ControlPort 9051 not reachable yet", YELLOW)
         _p("  → Start/restart Tor with the updated torrc config above.", YELLOW)
+        return
+    # AUTH-1/AUTH-2: actually test authentication, not just the port
+    _p("  Testing Tor authentication (stem) …")
+    try:
+        import stem
+        from stem.control import Controller
+        env_password = os.environ.get("TOR_CONTROL_PASSWORD", "")
+        env_file = os.path.join(_DIR, ".env")
+        if not env_password and os.path.exists(env_file):
+            for line in open(env_file):
+                if line.strip().startswith("TOR_CONTROL_PASSWORD="):
+                    env_password = line.strip().split("=", 1)[1].strip().strip('"')
+                    break
+        with Controller.from_port(port=9051) as ctrl:
+            if env_password:
+                ctrl.authenticate(password=env_password)
+                _p("✓ Auth OK   (password from TOR_CONTROL_PASSWORD)", GREEN)
+            else:
+                ctrl.authenticate()  # tries cookie + no-auth
+                _p("✓ Auth OK   (cookie / no-auth)", GREEN)
+    except ImportError:
+        _p("  ⚠  stem not installed — skipping auth test (install with: pip install stem)", YELLOW)
+    except Exception as auth_err:
+        _p(f"✗ Auth failed: {auth_err}", RED)
+        _p("""
+  Authentication test failed. Two reliable fixes:
+
+  FIX A — Add your user to the debian-tor group (cookie auth survives restarts):
+    sudo usermod -aG debian-tor $USER
+    newgrp debian-tor    # (or log out and back in)
+
+  FIX B — Use password auth (most reliable — never breaks on restarts):
+    1. Generate a hashed password:
+         tor --hash-password 'YOUR_SECRET_PASS'
+    2. Add to /etc/tor/torrc (or your custom torrc):
+         HashedControlPassword <output from step 1>
+    3. Add to .env in this directory:
+         TOR_CONTROL_PASSWORD=YOUR_SECRET_PASS
+    4. Restart Tor.
+""", YELLOW)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -301,6 +341,12 @@ def check_deps():
         ("stem",        "stem"),
     ]
 
+    optional = [
+        # MCP-1: mcp is needed only for `python3 sicry.py serve`
+        ("mcp", "mcp",
+         "optional — needed only for MCP server mode (python3 sicry.py serve)"),
+    ]
+
     missing = []
     for pkg, pip_name in required:
         try:
@@ -310,6 +356,17 @@ def check_deps():
             _p(f"  ✗ {pip_name}  — MISSING", RED)
             missing.append(pip_name)
 
+    _p("\n  Optional packages:")
+    for pkg, pip_name, note in optional:
+        try:
+            __import__(pkg)
+            _p(f"  ✓ {pip_name}  ({note})", GREEN)
+        except ImportError:
+            _p(f"  ◦ {pip_name}  ({note})", YELLOW)
+            _p(f"    Install: pip install {pip_name} --user")
+            _p(f"       or:  pipx install {pip_name}   (isolated environment)")
+            _p(f"       or:  pip install {pip_name} --break-system-packages   (Debian override)")
+
     if missing:
         _p(f"\n  Install missing packages:", YELLOW)
         cmd = f"pip install {' '.join(missing)}"
@@ -317,7 +374,7 @@ def check_deps():
         if _yes("  Install them now?"):
             subprocess.run([sys.executable, "-m", "pip", "install", *missing])
     else:
-        _p("\n  All dependencies satisfied.", GREEN)
+        _p("\n  All required dependencies satisfied.", GREEN)
 
 
 # ─────────────────────────────────────────────────────────────────

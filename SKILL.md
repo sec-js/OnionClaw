@@ -230,3 +230,35 @@ python3 {baseDir}/pipeline.py --query "INVESTIGATION_QUERY" --no-llm
 - Dark web search indexes go down often — run `check_engines.py` first and filter by alive engines.
 - LLM tools (`ask`) require an API key in `{baseDir}/.env`. Search and fetch work without any key.
 - Use responsibly and lawfully — OSINT, security research, and threat intelligence only.
+
+---
+
+## Maintenance
+
+### sync_sicry.py — update bundled sicry.py from upstream
+
+`sync_sicry.py` fetches the latest (or a tagged) `sicry.py` from the upstream
+[SICRY™ GitHub repo](https://github.com/JacobJandon/Sicry) and overwrites the
+bundled copy inside OnionClaw. Run it after a new SICRY™ release is published.
+
+```bash
+# Pull latest main branch:
+python3 {baseDir}/sync_sicry.py
+
+# Pull a specific release tag:
+python3 {baseDir}/sync_sicry.py --tag v1.2.0
+
+# Preview without writing (dry run):
+python3 {baseDir}/sync_sicry.py --dry-run
+```
+
+**Development workflow** (when editing sicry.py locally):
+1. Edit `OnionClaw/sicry.py`.
+2. Copy to parent repo: `cp OnionClaw/sicry.py Sicry/sicry.py`
+3. Commit + tag both repos, then push.
+4. Once the tag is live on GitHub, users can run `sync_sicry.py --tag vX.Y.Z`
+   to update their OnionClaw copy.
+
+Flags:
+- `--tag REF`   — git ref or tag to fetch (default: `main`)
+- `--dry-run`   — show what would happen without writing anything

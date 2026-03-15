@@ -59,13 +59,18 @@ parser.add_argument("--no-llm",  action="store_true",
                          "Useful when no API key is configured.")
 args = parser.parse_args()
 
+# BUG-5: reject blank queries immediately
+if not args.query.strip():
+    print("ERROR: --query cannot be empty", file=sys.stderr)
+    sys.exit(1)
+
 NO_LLM = args.no_llm
 
 def _step(n, total, label):
     print(f"\n[{n}/{total}] {label}")
     print("─" * 55)
 
-TOTAL = 4 if NO_LLM else 7  # steps 3, 5, 7 are LLM-only
+TOTAL = 7  # always 7 steps; LLM steps are marked [skip N/7] when --no-llm
 
 # ──────────────────────────────────────────────────────────────────
 # Step 1: Verify Tor
@@ -110,7 +115,7 @@ else:
 raw_query = args.query
 if NO_LLM:
     refined = raw_query
-    print(f"\n[–/–] Query refinement skipped (--no-llm)")
+    print(f"\n[skip 3/{TOTAL}] Query refinement skipped (--no-llm)")
     print(f"    Query: {refined}")
 else:
     _step(3, TOTAL, "Refine query")
@@ -124,7 +129,7 @@ else:
 # ──────────────────────────────────────────────────────────────────
 # Step 4: Search
 # ──────────────────────────────────────────────────────────────────
-_step(3 if NO_LLM else 4, TOTAL, f"Search {len(live_names)} engines for: \"{refined}\"")
+_step(4, TOTAL, f"Search {len(live_names)} engines for: \"{refined}\"")
 raw_results = sicry.search(refined, engines=live_names, max_results=args.max)
 print(f"✓ {len(raw_results)} raw results (deduplicated)")
 if not raw_results:
@@ -140,7 +145,7 @@ if len(raw_results) > 5:
 # ──────────────────────────────────────────────────────────────────
 if NO_LLM:
     best = raw_results[:20]
-    print(f"\n[–/–] Result filtering skipped (--no-llm) — using top {len(best)} results")
+    print(f"\n[skip 5/{TOTAL}] Result filtering skipped (--no-llm) — using top {len(best)} results")
 else:
     _step(5, TOTAL, "Filter to most relevant results")
     best = sicry.filter_results(refined, raw_results)
@@ -152,7 +157,7 @@ else:
 # Step 6: Batch scrape
 # ──────────────────────────────────────────────────────────────────
 scrape_count = min(args.scrape, len(best))
-_step(4 if NO_LLM else 6, TOTAL, f"Batch-scrape top {scrape_count} pages concurrently")
+_step(6, TOTAL, f"Batch-scrape top {scrape_count} pages concurrently")
 pages = sicry.scrape_all(best[:scrape_count], max_workers=5)
 print(f"✓ {len(pages)}/{scrape_count} pages scraped successfully")
 if len(pages) < scrape_count:
@@ -168,7 +173,7 @@ if not pages:
 # Step 7: OSINT analysis (LLM step — skipped with --no-llm)
 # ──────────────────────────────────────────────────────────────────
 if NO_LLM:
-    print(f"\n[–/–] LLM analysis skipped (--no-llm)")
+    print(f"\n[skip 7/{TOTAL}] LLM analysis skipped (--no-llm)")
     print()
     print("=" * 55)
     print("SCRAPED CONTENT (raw, no LLM analysis)")
@@ -185,7 +190,8 @@ if NO_LLM:
                     f.write(f"## {url}\n\n{text}\n\n")
             print(f"\nReport saved to: {args.out}")
         except OSError as e:
-            print(f"\nWARN: could not write output file: {e}")
+            print(f"\nERROR: could not write output file: {e}", file=sys.stderr)
+            sys.exit(1)
 else:
     _step(7, TOTAL, f"OSINT analysis — mode: {args.mode}")
     combined = "\n\n".join(f"[SOURCE: {url}]\n{text}" for url, text in pages.items())
@@ -222,7 +228,8 @@ else:
                 f.write(report)
             print(f"\nReport saved to: {args.out}")
         except OSError as e:
-            print(f"\nWARN: could not write output file: {e}")
+            print(f"\nERROR: could not write output file: {e}", file=sys.stderr)
+            sys.exit(1)
 
 # ── Rotate identity when done ──────────────────────────────────────
 sicry.renew_identity()
