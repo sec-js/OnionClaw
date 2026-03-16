@@ -61,6 +61,10 @@ Examples:
   python3 pipeline.py --watch-list
   python3 pipeline.py --modes
   python3 pipeline.py --engine-stats
+
+TorPool (multi-circuit Tor):
+  Set SICRY_POOL_SIZE=N in .env to use N isolated Tor circuits (see .env.example).
+  pipeline.py prints pool status at step 1 when SICRY_POOL_SIZE > 0.
     """,
 )
 parser.add_argument("--version",      action="version",
@@ -321,7 +325,10 @@ if args.interactive and not args.query:
             print("  No results.")
             continue
         for i, r in enumerate(_last_results, 1):
-            conf_str = f"  [{r.get('confidence', 0):.2f}]" if args.confidence else ""
+            # UX-4 v2.1.7: always show confidence in interactive mode — helps
+            # the user decide which result to fetch without needing --confidence
+            _iconf = r.get("confidence")
+            conf_str = f" [{_iconf:.2f}]" if _iconf is not None else ""
             print(f"  {i:>3}.{conf_str} [{r['engine']}] {r.get('title','')[:60]}")
             print(f"       {r['url']}")
         print("\n  Type a number to fetch a page, a new query to search, or 'help'.")
@@ -546,7 +553,11 @@ if len(raw_results) > 5:
 # Step 5: Filter (LLM) or rank by confidence (--no-llm)
 # ─────────────────────────────────────────────────────────────────
 if NO_LLM:
-    best = sorted(raw_results, key=lambda x: x.get("confidence", 0), reverse=True)[:20]
+    # BUG-1 v2.1.7: re-score raw results with the refined query so the step-5
+    # display never shows conf=0.0000.  Using score_results() (BM25 on title +
+    # snippet + url) here replaces stale search-time values.  A second re-score
+    # with scraped page texts happens after step 6 (line ~591).
+    best = sicry.score_results(refined, raw_results)[:20]
     print(f"\n[5/{TOTAL}] Ranked top {len(best)} results by BM25 confidence (--no-llm)")
     if args.confidence and best:
         for i, r in enumerate(best[:10], 1):

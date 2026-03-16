@@ -2,7 +2,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
 from __future__ import annotations
 
-__version__ = "2.1.6"
+__version__ = "2.1.7"
 
 """
 SICRY — Tor/Onion Network Access Layer for AI Agents
@@ -300,12 +300,17 @@ class _DB:
     def engine_reliability(self, engine: str, window: int = 5) -> float | None:
         """Fraction of last `window` checks where engine was up.
         Returns ``None`` when no history exists (engine never checked this session).
+
+        Uses Laplace (add-1) smoothing so a single downtime episode shows up
+        against an otherwise perfect history — prevents perpetual ``100%``.
         """
         rows = self.engine_history_get(engine, window)
         if not rows:
             return None   # UX-4 fix: distinguish "never checked" from "100% up"
         up = sum(1 for r in rows if r["status"] == "up")
-        return up / len(rows)
+        # UX-2 v2.1.7: Laplace smoothing (up+1)/(n+2) prevents perpetual 100%/0%
+        # so a single downtime incident is visible even against a full "up" history.
+        return (up + 1) / (len(rows) + 2)
 
     # ── watch jobs ─────────────────────────────────────────────────
     def watch_add(self, query: str, mode: str = "threat_intel",
@@ -837,8 +842,11 @@ def score_results(query: str, results: list[dict], texts: dict[str, str] | None 
             / (cnt + k1 * (1 - b + b * dl / avgdl))
             for cnt in term_count.values()
         )
-        # Normalise to 0-1 loosely
-        norm_score = min(score / (len(q_terms) * 2 + 1), 1.0)
+        # Normalise to 0-1 loosely.
+        # BUG-1 v2.1.7: floor at 0.05 so search-engine-returned results never
+        # display conf=0.0000 — a result returned by a search engine has measured
+        # relevance even when its title/snippet shares no exact query terms.
+        norm_score = max(min(score / (len(q_terms) * 2 + 1), 1.0), 0.05)
         r_copy = dict(result)
         # BUG-1 v2.1.5: set both keys so pipeline displays (which read 'confidence')
         # reflect the post-scrape re-score, and library callers get both.
@@ -2448,6 +2456,13 @@ def crawl(
                     continue
                 clean = href.rstrip("/")
                 with _lock:
+                    # BUG-2 v2.1.7: add to links_found at discovery time so that
+                    # .onion child URLs appear in links_found even if they are
+                    # never actually fetched (e.g. max_pages cap is hit before
+                    # their batch executes).
+                    if clean not in _seen_links:
+                        _seen_links.add(clean)
+                        links_found.append(clean)
                     if clean not in visited:
                         visited.add(clean)
                         _db().crawl_save_link(url, clean)
@@ -2455,7 +2470,12 @@ def crawl(
         return child_links
 
     # BFS with ThreadPoolExecutor for concurrent sibling-page fetching
-    visited.add(seed_url.rstrip("/"))
+    # BUG-2 v2.1.7: record the seed URL as "found" at the start — even if the
+    # seed page itself fails to fetch, the crawl still discovered/targeted it.
+    _clean_seed = seed_url.rstrip("/")
+    visited.add(_clean_seed)
+    _seen_links.add(_clean_seed)
+    links_found.append(_clean_seed)
     while queue and pages_crawled < max_pages:
         batch = []
         while queue and len(batch) < max_workers:
