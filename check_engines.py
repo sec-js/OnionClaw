@@ -65,13 +65,15 @@ if args.cached > 0 and os.path.exists(_ENGINES_CACHE_FILE):
     except Exception:
         results = None  # corrupt cache — fall through to live ping
 
-if results is None:    # Verify Tor is reachable before spending 15-30 s pinging engines
+if results is None:
+    # Verify Tor is reachable before spending 15-30 s pinging engines
     if not getattr(sicry, '_tor_port_open', lambda: True)():
         host = getattr(sicry, 'TOR_SOCKS_HOST', '127.0.0.1')
         port = getattr(sicry, 'TOR_SOCKS_PORT', 9050)
         print(f"\u2717 Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
         print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
-        sys.exit(1)    if not args.json:
+        sys.exit(1)
+    if not args.json:
         print("Checking all dark web search engines via Tor...")
         print("(This takes ~15–30 seconds)")
         print()

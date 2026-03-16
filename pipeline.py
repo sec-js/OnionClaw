@@ -79,7 +79,7 @@ parser.add_argument("--no-llm",       action="store_true",
                     help="Skip LLM steps — use analyze_nollm() for structured entity/keyword extraction")
 parser.add_argument("--confidence",   action="store_true",
                     help="Show BM25 confidence scores next to each search result")
-parser.add_argument("--format",       choices=["md", "json", "csv", "stix"], default="md",
+parser.add_argument("--format",       choices=["md", "json", "csv", "stix", "misp"], default="md",
                     help="Output format for --out (default: md)")
 parser.add_argument("--clear-cache",  action="store_true",
                     help="Clear all cached fetch results before running")
@@ -91,6 +91,10 @@ parser.add_argument("--interval",     type=float, default=6.0,
                     help="Watch re-check interval in hours (default: 6, requires --watch)")
 parser.add_argument("--watch-check",  action="store_true",
                     help="Run all due watch jobs now and exit")
+parser.add_argument("--watch-list",   action="store_true",
+                    help="List all active watch jobs and exit")
+parser.add_argument("--watch-disable", default=None, metavar="JOB_ID",
+                    help="Disable a watch job by ID and exit")
 parser.add_argument("--resume",       default=None, metavar="JOB_ID",
                     help="Resume a previous pipeline run from its SQLite checkpoint")
 parser.add_argument("--interactive",  action="store_true",
@@ -131,8 +135,29 @@ if args.watch_check:
         print("  No due jobs or no new results.")
     else:
         for a in alerts:
-            print(f"  [{a['job_id']}] {a.get('new_count', 0)} new results "
+            new_flag = "[NEW]" if a.get("new") else "[unchanged]"
+            print(f"  {new_flag} [{a['job_id']}] {a.get('result_count', 0)} results "
                   f"for query: {a.get('query')!r}")
+    sys.exit(0)
+
+# ── standalone: watch-list ────────────────────────────────────────────
+if args.watch_list:
+    jobs = sicry.watch_list()
+    if not jobs:
+        print("No active watch jobs.")
+    else:
+        print(f"Active watch jobs ({len(jobs)}):")
+        for j in jobs:
+            last = j.get('last_run')
+            last_str = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(last)) if last else "never"
+            print(f"  {j['id']}  [{j['mode']}]  every {j['interval_hours']}h  "
+                  f"last={last_str}  query={j['query']!r}")
+    sys.exit(0)
+
+# ── standalone: watch-disable ──────────────────────────────────────────
+if args.watch_disable:
+    sicry.watch_disable(args.watch_disable)
+    print(f"Disabled watch job: {args.watch_disable}")
     sys.exit(0)
 
 # ── standalone: interactive mode (no --query required) ───────────
@@ -302,6 +327,13 @@ else:
     bad = [n for n in live_names if n.lower() not in known] if known else []
     if bad:
         print(f"WARN: unknown engine(s): {', '.join(bad)} — will be ignored by search()")
+    # UX-6: show mode routing note when --engines overrides mode selection
+    if args.mode and args.mode != "threat_intel":
+        mc = sicry.mode_config(args.mode)
+        mode_engines = mc.get("engines")
+        if mode_engines:
+            print(f"  NOTE: --engines overrides mode '{args.mode}' routing "
+                  f"(mode default: {', '.join(mode_engines)})")
     _step(2, TOTAL, f"Using specified engines: {', '.join(live_names)}")
 
 # ─────────────────────────────────────────────────────────────────
@@ -468,6 +500,11 @@ if args.out:
         elif fmt == "stix":
             out_payload = json.dumps(
                 sicry.to_stix(best, query=refined, report_text=report),
+                indent=2,
+            )
+        elif fmt == "misp":
+            out_payload = json.dumps(
+                sicry.to_misp(best, query=refined, report_text=report),
                 indent=2,
             )
         else:  # md (default)

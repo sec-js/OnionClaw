@@ -2,7 +2,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
 from __future__ import annotations
 
-__version__ = "2.1.3"
+__version__ = "2.1.4"
 
 """
 SICRY — Tor/Onion Network Access Layer for AI Agents
@@ -365,9 +365,19 @@ class _DB:
             self._conn().commit()
 
     def crawl_export(self, job_id: str) -> dict:
-        pages = [dict(r) for r in self._conn().execute(
-            "SELECT url,depth,ts,title,entities FROM crawl_pages WHERE job_id=?", (job_id,)
-        ).fetchall()]
+        raw_pages = self._conn().execute(
+            "SELECT url,depth,ts,title,text,entities FROM crawl_pages WHERE job_id=?",
+            (job_id,),
+        ).fetchall()
+        pages = []
+        for r in raw_pages:
+            row = dict(r)
+            # BUG-2 fix: parse entities JSON string back to dict
+            try:
+                row["entities"] = json.loads(row["entities"]) if row["entities"] else {}
+            except Exception:
+                row["entities"] = {}
+            pages.append(row)
         links = [dict(r) for r in self._conn().execute(
             "SELECT src,dst FROM crawl_links WHERE src IN "
             "(SELECT url FROM crawl_pages WHERE job_id=?)", (job_id,)
@@ -415,6 +425,7 @@ def clear_cache() -> int:
 # ─────────────────────────────────────────────────────────────────
 _CONTENT_BLACKLIST: frozenset[str] = frozenset({
     # child sexual abuse material (CSAM)
+    "csam",                                        # CRITICAL-2: unambiguous acronym
     "child porn", "childporn", "cp porn", "pedo", "paedo",
     "lolita", "loli ", "lolicon", "shotacon",
     "preteen sex", "preteen nude", "preteens sex",
@@ -442,11 +453,13 @@ _CONTENT_BLACKLIST: frozenset[str] = frozenset({
 _TOKEN_PAIR_BLACKLIST: tuple[tuple[str, str], ...] = (
     ("child",  "rape"),
     ("child",  "torture"),
+    ("child",  "minor"),   # CRITICAL-3: "KIDS — CHILD — MINOR" dark web combo
     ("minor",  "rape"),
     ("minor",  "torture"),
     ("kids",   "rape"),
     ("kids",   "sex"),
     ("kids",   "porn"),
+    ("kids",   "child"),   # CRITICAL-3: evasion title pattern
     ("baby",   "rape"),
     ("infant", "rape"),
     ("teen",   "rape"),
@@ -2277,7 +2290,7 @@ class CrawlResult:
     job_id:       str
     seed_url:     str
     pages_found:  int
-    links_found:  int
+    links_found:  list       # BUG-1 fix: list of discovered .onion URLs
     entities:     dict       # aggregated across all pages
     db_path:      str
 
@@ -2335,7 +2348,7 @@ def crawl(
         "usernames": [],
     }
     pages_crawled = 0
-    links_found = 0
+    links_found: list[str] = []   # BUG-1 fix: collect actual URLs not a count
 
     _lock = threading.Lock()
 
@@ -2394,7 +2407,7 @@ def crawl(
                 with _lock:
                     if clean not in visited:
                         visited.add(clean)
-                        links_found += 1
+                        links_found.append(clean)  # BUG-1 fix: store URL not count
                         _db().crawl_save_link(url, clean)
                         child_links.append((clean, depth + 1))
         return child_links
@@ -3329,7 +3342,12 @@ Examples:
         )
         print(f"\nJob: {result.job_id}")
         print(f"Pages found : {result.pages_found}")
-        print(f"Links found : {result.links_found}")
+        print(f"Links found : {len(result.links_found)}")
+        if result.links_found:
+            for lnk in result.links_found[:20]:
+                print(f"  {lnk}")
+            if len(result.links_found) > 20:
+                print(f"  ... and {len(result.links_found) - 20} more")
         print(f"Entities    : {json.dumps(result.entities, indent=2)}")
         if args.out:
             export = crawl_export(result.job_id)
