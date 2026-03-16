@@ -2,7 +2,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
 from __future__ import annotations
 
-__version__ = "2.1.1"
+__version__ = "2.1.2"
 
 """
 SICRY — Tor/Onion Network Access Layer for AI Agents
@@ -3262,6 +3262,11 @@ Examples:
             print(f"  {sym}  {row['ts']}  {row.get('latency_ms', 0):.0f}ms")
 
     elif args.cmd == "search":
+        if not _tor_port_open():
+            print(f"\u2717 Tor SOCKS port {TOR_SOCKS_HOST}:{TOR_SOCKS_PORT} is not reachable.",
+                  file=sys.stderr)
+            print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
+            sys.exit(1)
         results = search(
             args.query,
             engines=args.engines,
@@ -3270,7 +3275,7 @@ Examples:
             _use_cache=not args.no_cache,
         )
         if not results:
-            print("No results. Tor may be down or engines unreachable.")
+            print("No results. Engines may be unreachable or query returned nothing.")
         else:
             fmt = args.format
             if fmt == "json":
@@ -3289,6 +3294,11 @@ Examples:
             _write_out(out_text, args.out)
 
     elif args.cmd == "fetch":
+        if not _tor_port_open():
+            print(f"\u2717 Tor SOCKS port {TOR_SOCKS_HOST}:{TOR_SOCKS_PORT} is not reachable.",
+                  file=sys.stderr)
+            print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
+            sys.exit(1)
         r = fetch(args.url)
         if r["error"]:
             print(f"Error: {r['error']}", file=sys.stderr)
@@ -3366,17 +3376,16 @@ Examples:
     elif args.cmd == "pool":
         pc = getattr(args, "pool_cmd", None)
         if pc == "start":
-            pool = _get_pool(size=args.size, base_port=args.base_port)
-            pool.start()
+            pool_inst = TorPool(size=args.size, base_port=args.base_port)
+            pool_inst.start()
             print(f"TorPool started: {args.size} circuits on ports "
                   f"{args.base_port}–{args.base_port + args.size - 1}")
-            print("Run 'pool stop' or Ctrl-C to stop.")
+            print("Press Ctrl-C to stop.")
             try:
-                import time as _time
                 while True:
-                    _time.sleep(60)
+                    time.sleep(60)
             except KeyboardInterrupt:
-                pool.stop()
+                pool_inst.stop()
                 print("Pool stopped.")
         elif pc == "stop":
             _p = _get_pool()
@@ -3384,7 +3393,7 @@ Examples:
                 _p.stop()
                 print("TorPool stopped.")
             else:
-                print("No pool running.")
+                print("No pool running (TOR_POOL_SIZE=0 or pool not started in this process).")
         elif pc == "status":
             _p = _get_pool()
             if _p and _p._procs:

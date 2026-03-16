@@ -76,6 +76,14 @@ if not args.json:
         print("Engines : all 12")
     print()
 
+# Verify Tor is reachable before attempting network calls
+if not getattr(sicry, '_tor_port_open', lambda: True)():
+    host = getattr(sicry, 'TOR_SOCKS_HOST', '127.0.0.1')
+    port = getattr(sicry, 'TOR_SOCKS_PORT', 9050)
+    print(f"\u2717 Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
+    print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
+    sys.exit(1)
+
 results = sicry.search(args.query, engines=engines_to_use, max_results=args.max)
 
 if args.json:
