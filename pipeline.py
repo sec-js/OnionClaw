@@ -181,6 +181,23 @@ if args.watch_check:
             print(f"  {new_flag} [{a['job_id']}] {a.get('result_count', 0)} results  "
                   f"last={last_str}  next={next_str}")
             print(f"       query: {a.get('query')!r}")
+            # UX-2: show top-5 result titles/URLs so the operator can see what
+            # triggered the alert without running a separate query
+            if a.get("new") and a.get("results"):
+                for _tr in a["results"][:5]:
+                    _conf = _tr.get("confidence")
+                    _tc   = f"[conf={_conf:.2f}] " if _conf is not None else ""
+                    print(f"         {_tc}{_tr.get('title', '(no title)')[:70]}")
+                    print(f"           {_tr.get('url', '')}")
+            # IMPROVE-7: --output-dir saves each triggered alert as <job_id>.json
+            if args.output_dir and a.get("new") and a.get("results"):
+                import json as _json
+                os.makedirs(args.output_dir, exist_ok=True)
+                _wout = os.path.join(args.output_dir, f"{a['job_id']}.json")
+                with open(_wout, "w") as _wf:
+                    _json.dump({"job_id": a["job_id"], "query": a["query"],
+                                "results": a["results"]}, _wf, indent=2)
+                print(f"       saved → {_wout}")
     sys.exit(0)
 
 # ── standalone: watch-list ────────────────────────────────────────────
@@ -232,12 +249,14 @@ if args.engine_stats:
     else:
         print(f"  {'Engine':<24} {'Reliability':>12}  {'Last Latency':>14}  Last Seen")
         print("  " + "─" * 62)
-        for _eng, _rel in sorted(_scores.items(), key=lambda x: -x[1]):
+        # UX-4 fix: _rel can be None (engine never checked); sort Nones last
+        for _eng, _rel in sorted(_scores.items(), key=lambda x: (x[1] is None, -(x[1] or 0))):
             _last = (_hist.get(_eng) or [{}])[0]
             _lat  = f"{_last.get('latency_ms')}ms" if _last.get("latency_ms") else "—"
             _ts   = _last.get("ts")
             _ts_s = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(_ts)) if _ts else "—"
-            print(f"  {_eng:<24} {_rel:>10.0%}  {_lat:>14}  {_ts_s}")
+            _rel_str = f"{_rel:.0%}" if _rel is not None else "(no data)"
+            print(f"  {_eng:<24} {_rel_str:>11}  {_lat:>14}  {_ts_s}")
     sys.exit(0)
 
 # ── standalone: interactive mode (no --query required) ───────────
@@ -282,6 +301,16 @@ if args.interactive and not args.query:
                 else:
                     print(f"\n  === {page['title']} ===")
                     print(page["text"][:4000])
+                    # UX-3: surface entities/keywords inline so the operator gets
+                    # actionable intel without a separate analyze call
+                    if page.get("text"):
+                        _ents = sicry.analyze_nollm(
+                            page["text"][:2000],
+                            query=_last_results[idx].get("query", ""),
+                        )
+                        if _ents:
+                            print("\n  --- Entities / Keywords ---")
+                            print(_ents[:1200])
             else:
                 print(f"  No result #{int(q)} — run a query first.")
             continue
@@ -406,6 +435,13 @@ if not status["tor_active"]:
     print("  Start Tor first:  apt install tor && tor &")
     sys.exit(1)
 print(f"✓ Tor active | exit IP: {status['exit_ip']}")
+# IMPROVE-1: show TorPool status so operator knows whether scrape workers
+# use separate Tor circuits (SICRY_POOL_SIZE > 0) or share one circuit
+_pool_sz = getattr(sicry, "TOR_POOL_SIZE", 0)
+if _pool_sz > 0:
+    _pool_base = getattr(sicry, "TOR_POOL_BASE_PORT", 9060)
+    print(f"  TorPool: {_pool_sz} circuits active "
+          f"(SICRY_POOL_SIZE={_pool_sz}, socks ports {_pool_base}–{_pool_base + _pool_sz - 1})")
 
 # ─────────────────────────────────────────────────────────────────
 # Step 2: Health-check engines
