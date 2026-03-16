@@ -2,7 +2,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
 from __future__ import annotations
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 """
 SICRY — Tor/Onion Network Access Layer for AI Agents
@@ -911,9 +911,25 @@ def mode_config(mode: str) -> dict:
 # just now for .onion and the full Tor network.
 # ─────────────────────────────────────────────────────────────────
 
+def _tor_port_open(host: str = TOR_SOCKS_HOST, port: int = TOR_SOCKS_PORT,
+                   timeout: float = 2.0) -> bool:
+    """Return True if the Tor SOCKS port is accepting TCP connections."""
+    import socket as _socket
+    try:
+        with _socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def check_tor() -> dict:
     """
     Verify Tor is running and confirm exit IP is a Tor node.
+
+    First probes the SOCKS port at the TCP level (fast local check) before
+    making any remote request, so the function returns immediately if the
+    Tor service is not listening — no false positives from lingering
+    connections or cached state.
 
     Returns:
         {"tor_active": bool, "exit_ip": str|None, "error": str|None}
@@ -922,6 +938,12 @@ def check_tor() -> dict:
         >>> sicry.check_tor()
         {"tor_active": True, "exit_ip": "185.220.101.5", "error": None}
     """
+    if not _tor_port_open():
+        return {
+            "tor_active": False,
+            "exit_ip":    None,
+            "error":      f"Tor SOCKS port {TOR_SOCKS_HOST}:{TOR_SOCKS_PORT} is not reachable",
+        }
     try:
         s = _build_tor_session()
         r = s.get("https://check.torproject.org/api/ip", timeout=TOR_TIMEOUT)
