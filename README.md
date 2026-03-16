@@ -87,8 +87,9 @@ OnionClaw is published for **defensive research, red-team engagements, and threa
 7. [All seven commands](#all-seven-commands)
 8. [Investigation flows](#investigation-flows)
 9. [Analysis modes](#analysis-modes)
-10. [Troubleshooting](#troubleshooting)
-11. [Credits](#credits)
+10. [Architecture](#architecture)
+11. [Troubleshooting](#troubleshooting)
+12. [Credits](#credits)
 
 ---
 
@@ -435,6 +436,10 @@ After syncing, commit the updated file:
 git add sicry.py && git commit -m "chore: sync sicry.py to SICRY v1.2.0"
 ```
 
+> **Update notices** — `pipeline.py` (and `sicry.check_update()`) checks the
+> GitHub **Releases API** (`/releases/latest`). Only published formal releases
+> trigger a notice — plain git tags and pre-releases are silently ignored.
+
 ---
 
 ## Investigation flows
@@ -569,6 +574,95 @@ Set `LLM_PROVIDER` and an API key in `.env`. For no-key local operation: `LLM_PR
 
 **`ERROR: sicry.py not found`**
 `sicry.py` must be in the OnionClaw root (same folder as `SKILL.md`). It is included in this repo — do not delete or move it. If you cloned and it is missing, re-clone fresh.
+
+---
+
+## Architecture
+
+How OnionClaw’s pieces fit together — from a command-line invocation all the way to a `.onion` response.
+
+### Layer diagram
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│             User / OpenClaw Agent / CI script                   │
+│  python3 pipeline.py --query …  |  pipeline.py --daemon-poll  │
+└───────────────────────────┬───────────────────────────────┘
+                           │
+  Python wrappers          ▼
+┌──────────────────────────────────────────────────────────────┐
+│            OnionClaw command layer                              │
+│                                                                  │
+│  check_tor.py  renew.py  fetch.py  search.py  ask.py            │
+│  check_engines.py  pipeline.py  sync_sicry.py                   │
+│                                                                  │
+│  All call into ↓ one file                                        │
+└────────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│              SICRY™  (sicry.py — bundled)                        │
+│                                                                  │
+│  check_tor()           search(query, engines, …)               │
+│  renew_identity()      scrape_all(urls)                         │
+│  fetch(url)            ask(content, mode, …)                   │
+│  check_search_engines()  refine_query()  filter_results()       │
+│                                                                  │
+│  State: SQLite DB (watch jobs · engine stats · result cache)    │
+└─────┬──────────────────────────┬──────────────────────────────┘
+        │  SOCKS5              │  stem control
+        │  127.0.0.1:9050      │  127.0.0.1:9051
+        ▼                      ▼
+┌───────────────────┐  ┌───────────────────┐
+│  Tor  (tor / TorPool) │  │  Tor Control Port    │
+│  SOCKS5 proxy         │◄─│  renew_identity()    │
+└─────┬─────────────┘  └───────────────────┘
+        │  onion routing (3 hops)
+        ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  Dark Web / Tor Network                         │
+│                                                                  │
+│   18 search engines (.onion)    Clearnet via Tor exit nodes      │
+│   Ahmia · DuckDuckGo-Tor        Any HTTPS/HTTP URL               │
+│   Tor66 · + 15 more…                                             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### pipeline.py flow
+
+```
+  --query / watch job
+     │
+     ▼
+[1] check_tor()              → abort if not active
+[2] check_search_engines()   → collect live engine list
+[3] refine_query()           → LLM: natural language → ≤5 keywords
+[4] search(engines=live)     → parallel queries over Tor
+[5] filter_results()         → LLM: keep top 20 relevant
+[6] scrape_all(best[:N])     → concurrent batch-fetch over Tor
+[7] ask(content, mode=…)    → LLM OSINT report
+     │
+     ▼
+  report  [→ --out file.md]  [→  --watch-check --output-dir]
+```
+
+### TorPool mode (optional)
+
+Set `SICRY_POOL_SIZE=N` (recommended 2–4) to run N independent Tor processes
+for higher search throughput:
+
+```
+pipeline.py  ─→  TorPool
+                  ├── tor[0]  :9050
+                  ├── tor[1]  :9052
+                  └── tor[N-1]:...
+```
+
+### Update policy
+
+`pipeline.py --check-update` calls `sicry.check_update()`, which queries the
+GitHub **Releases API** (`/releases/latest`). Only **published formal releases**
+trigger a notice — plain git tags and pre-releases are silently ignored.
 
 ---
 
