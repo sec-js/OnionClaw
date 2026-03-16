@@ -115,6 +115,8 @@ parser.add_argument("--engine-stats",  action="store_true",
                     help="Print per-engine reliability / latency table and exit")
 parser.add_argument("--watch-daemon",  action="store_true",
                     help="Run watch daemon as a foreground loop (Ctrl+C to stop)")
+parser.add_argument("--daemon-poll",   type=int, default=None, metavar="SECONDS",
+                    help="Daemon poll interval in seconds (default: 360). Overrides --interval for daemon tick rate.")
 parser.add_argument("--misp-threat-level", type=int, default=2, choices=[1, 2, 3, 4],
                     help="MISP threat level (1=High 2=Medium 3=Low 4=Undefined; default 2)")
 parser.add_argument("--misp-distribution", type=int, default=0,
@@ -122,6 +124,8 @@ parser.add_argument("--misp-distribution", type=int, default=0,
                     help="MISP distribution setting (0=Organisation only … 5=All; default 0)")
 parser.add_argument("--output-dir",    default=None, metavar="DIR",
                     help="Write output to DIR/<job_id>.<ext> instead of --out (batch-friendly)")
+parser.add_argument("--watch-clear-all", action="store_true",
+                    help="Disable ALL active watch jobs at once and exit")
 args = parser.parse_args()
 
 # ── BUG-4: warn if --interval used without --watch ─────────────────────────
@@ -269,6 +273,7 @@ if args.interactive and not args.query:
     print("=" * 65)
     _session_history: list[str] = []
     _last_results: list[dict] = []
+    _repl_format: str = "text"   # IMPROVE-8: format for drill-down output (text/json/stix/misp/csv)
     while True:
         try:
             q = input("\nQuery > ").strip()
@@ -286,6 +291,8 @@ if args.interactive and not args.query:
             print("    <query text>      Search the dark web")
             print("    <number>          Fetch page N from the last result set")
             print("    history           Show previous queries this session")
+            print("    set format <fmt>  Set output format: text (default), json, stix, misp, csv")
+            print(f"    Current format:   {_repl_format}")
             print("    exit / quit       Exit the REPL")
             print("    help / ?          Show this help")
             continue
@@ -296,6 +303,16 @@ if args.interactive and not args.query:
                 for _i, _hq in enumerate(_session_history, 1):
                     print(f"  {_i}. {_hq}")
             continue
+        # IMPROVE-8: set format <fmt> command
+        if q.lower().startswith("set format "):
+            _repl_format = q.split()[-1].lower()
+            _valid_fmts = ("text", "json", "stix", "misp", "csv")
+            if _repl_format not in _valid_fmts:
+                print(f"  Unknown format {_repl_format!r}. Options: {', '.join(_valid_fmts)}")
+                _repl_format = "text"
+            else:
+                print(f"  Output format set to: {_repl_format}")
+            continue
         if q.isdigit():
             idx = int(q) - 1
             if _last_results and 0 <= idx < len(_last_results):
@@ -304,10 +321,40 @@ if args.interactive and not args.query:
                     print(f"  Error: {page['error']}")
                 else:
                     print(f"\n  === {page['title']} ===")
-                    print(page["text"][:4000])
-                    # UX-3: surface entities/keywords inline so the operator gets
-                    # actionable intel without a separate analyze call
-                    if page.get("text"):
+                    # IMPROVE-8: honour _repl_format for drill-down output
+                    if _repl_format == "json":
+                        import json as _rj
+                        print(_rj.dumps({"url": _last_results[idx]["url"],
+                                         "title": page["title"],
+                                         "text": page["text"][:4000]}, indent=2))
+                    elif _repl_format in ("stix", "misp"):
+                        _rfmt_result = [{"url": _last_results[idx]["url"],
+                                         "title": page.get("title", ""),
+                                         "confidence": _last_results[idx].get("confidence", 0.5),
+                                         "engine": _last_results[idx].get("engine", "fetch")}]
+                        if _repl_format == "stix":
+                            import json as _rj
+                            print(_rj.dumps(sicry.to_stix(_rfmt_result, query=q), indent=2)[:3000])
+                        else:
+                            import json as _rj
+                            print(_rj.dumps(sicry.to_misp(_rfmt_result, query=q), indent=2)[:3000])
+                    else:
+                        # Default text mode
+                        print(page["text"][:4000])
+                    # UX-4 v2.1.8: structured entity extraction inline
+                    if page.get("text") and _repl_format == "text":
+                        import re as _re
+                        _pt = page["text"]
+                        _emails  = list(set(_re.findall(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", _pt)))
+                        _onions  = list(set(_re.findall(r"https?://[a-z2-7]{16,56}\.onion(?:/[^\s\"'<>]*)?", _pt)))
+                        _btc     = list(set(_re.findall(r"\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b", _pt)))
+                        _has_pgp = bool(_re.search(r"BEGIN PGP|END PGP", _pt))
+                        if any([_emails, _onions, _btc, _has_pgp]):
+                            print("\n  ── Extracted Entities ──")
+                            if _emails:  print(f"  Emails     : {', '.join(_emails[:5])}")
+                            if _onions:  print(f"  Onion links: {', '.join(_onions[:5])}")
+                            if _btc:     print(f"  BTC addrs  : {', '.join(_btc[:3])}")
+                            if _has_pgp: print("  PGP key    : detected")
                         _ents = sicry.analyze_nollm(
                             page["text"][:2000],
                             query=_last_results[idx].get("query", ""),
@@ -334,6 +381,14 @@ if args.interactive and not args.query:
         print("\n  Type a number to fetch a page, a new query to search, or 'help'.")
     sys.exit(0)
 
+# ── standalone: --watch-clear-all ─────────────────────────────────────
+if args.watch_clear_all:
+    _n_cleared = sicry.watch_clear_all()
+    print(f"Cleared {_n_cleared} active watch job(s).")
+    if _n_cleared == 0:
+        print("  (no active watch jobs found — run --watch-list to check)")
+    sys.exit(0)
+
 # ── BUG-1: load checkpoint early so --resume can restore the query ────────
 _checkpoint: dict = {}
 _job_id = args.resume or str(uuid.uuid4())[:8]
@@ -341,7 +396,11 @@ _job_id = args.resume or str(uuid.uuid4())[:8]
 # ── standalone: --watch-daemon ────────────────────────────────────────
 if args.watch_daemon:
     import signal
-    _poll_s = max(int(args.interval * 60), 60)  # min 60 s
+    # IMPROVE-5: --daemon-poll overrides the computed tick interval
+    if args.daemon_poll and args.daemon_poll > 0:
+        _poll_s = args.daemon_poll
+    else:
+        _poll_s = max(int(args.interval * 60), 60)  # min 60 s
     print(f"[watch-daemon] Starting foreground daemon. Poll every {_poll_s}s. Ctrl+C to stop.")
     def _daemon_sig(s, f): print("\n[watch-daemon] Stopped."); sys.exit(0)
     signal.signal(signal.SIGINT, _daemon_sig)
@@ -525,6 +584,13 @@ else:
 # Step 4: Search
 # ─────────────────────────────────────────────────────────────────
 _step(4, TOTAL, f"Search {len(live_names)} engines for: \"{refined}\"")
+# IMPROVE-7: show extra seed onions so the audit trail records exactly what was searched
+_mc_s4 = sicry.mode_config(args.mode)
+_s4_seeds = _mc_s4.get("extra_seeds") or []
+if _s4_seeds:
+    _seed_preview = ", ".join(_s4_seeds[:3])
+    _seed_more = f" … +{len(_s4_seeds)-3} more" if len(_s4_seeds) > 3 else ""
+    print(f"  + {len(_s4_seeds)} mode seed onion(s): {_seed_preview}{_seed_more}")
 cached_results = _ckpt("search")
 if cached_results:
     raw_results = cached_results

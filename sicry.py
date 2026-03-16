@@ -2,7 +2,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/Sicry
 from __future__ import annotations
 
-__version__ = "2.1.7"
+__version__ = "2.1.8"
 
 """
 SICRY — Tor/Onion Network Access Layer for AI Agents
@@ -345,6 +345,15 @@ class _DB:
                 "UPDATE watch_jobs SET enabled=0 WHERE id=?", (job_id,)
             )
             self._conn().commit()
+
+    def watch_clear_all(self) -> int:
+        """Disable ALL active watch jobs. Returns count cleared (IMPROVE-6)."""
+        with self._lock:
+            n = self._conn().execute(
+                "UPDATE watch_jobs SET enabled=0 WHERE enabled=1"
+            ).rowcount
+            self._conn().commit()
+            return n
 
     def watch_due(self) -> list[dict]:
         """Return jobs that are due for a re-run."""
@@ -2216,6 +2225,20 @@ def watch_disable(job_id: str) -> None:
     _db().watch_disable(job_id)
 
 
+def watch_clear_all() -> int:
+    """Disable **all** active watch jobs at once. Returns the count cleared.
+
+    Useful during testing or after pivoting investigation focus.
+    Use ``watch_list()`` first to verify which jobs will be cleared.
+
+    Example::
+
+        n = sicry.watch_clear_all()
+        print(f"{n} watch job(s) cleared.")
+    """
+    return _db().watch_clear_all()
+
+
 def watch_check(
     callback: Optional[object] = None,
 ) -> list[dict]:
@@ -2481,6 +2504,14 @@ def crawl(
         while queue and len(batch) < max_workers:
             item = queue.pop(0)
             batch.append(item)
+            # BUG-1 v2.1.8: record URL at dispatch time (when it leaves the
+            # queue) so links_found is populated even if _process_page fails
+            # to fetch the page (error/offline hidden service).
+            _bc = item[0].rstrip("/")
+            with _lock:
+                if _bc not in _seen_links:
+                    _seen_links.add(_bc)
+                    links_found.append(_bc)
 
         with ThreadPoolExecutor(max_workers=min(max_workers, len(batch))) as ex:
             future_map = {ex.submit(_process_page, url, depth): (url, depth)
