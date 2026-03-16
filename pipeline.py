@@ -204,23 +204,31 @@ if args.watch_check:
             # [1] v2.1.10: --output-dir saves ALL due jobs (new or unchanged) so
             # automated pipelines always receive a file regardless of delta status.
             # Payload enriched with 'new', schedule fields, and 'mode'.
+            # [BUG-6 v2.1.12] wrap output-dir write in try/except so a
+            # PermissionError (or any OSError) exits clean with code 1
+            # instead of propagating an unhandled traceback.
             if args.output_dir:
-                os.makedirs(args.output_dir, exist_ok=True)
-                _wout = os.path.join(args.output_dir, f"{a['job_id']}.json")
-                with open(_wout, "w") as _wf:
-                    _json.dump({
-                        "job_id":       a["job_id"],
-                        "query":        a.get("query", ""),
-                        "new":          a.get("new", False),
-                        "result_count": a.get("result_count", 0),
-                        "mode":         a.get("mode", "threat_intel"),
-                        "last_run":     last_str,
-                        "last_run_ts":  last_run,
-                        "next_run":     next_str,
-                        "results":      a.get("results") or [],
-                    }, _wf, indent=2)
-                print(f"       saved → {_wout}")
-                _n_saved += 1
+                try:
+                    os.makedirs(args.output_dir, exist_ok=True)
+                    _wout = os.path.join(args.output_dir, f"{a['job_id']}.json")
+                    with open(_wout, "w") as _wf:
+                        _json.dump({
+                            "job_id":       a["job_id"],
+                            "query":        a.get("query", ""),
+                            "new":          a.get("new", False),
+                            "result_count": a.get("result_count", 0),
+                            "mode":         a.get("mode", "threat_intel"),
+                            "last_run":     last_str,
+                            "last_run_ts":  last_run,
+                            "next_run":     next_str,
+                            "results":      a.get("results") or [],
+                        }, _wf, indent=2)
+                    print(f"       saved \u2192 {_wout}")
+                    _n_saved += 1
+                except Exception as _wce:
+                    print(f"\nERROR: could not write output file: {_wce}",
+                          file=sys.stderr)
+                    sys.exit(1)
         if args.output_dir:
             print(f"  Saved {_n_saved} file(s) to {args.output_dir!r}")
     # [2] v2.1.9: also list waiting (non-due) jobs so every job's health is
@@ -762,15 +770,15 @@ print(report)
 if args.out or args.output_dir:
     # IMPROVE-8: --output-dir auto-names the file as <job_id>.<ext>
     fmt = args.format
-    if args.output_dir:
-        os.makedirs(args.output_dir, exist_ok=True)
-        _ext_map = {"json": "json", "csv": "csv", "stix": "json",
-                    "misp": "json", "md": "md"}
-        _out_path = os.path.join(args.output_dir,
-                                 f"{_job_id}.{_ext_map.get(fmt, 'txt')}")
-    else:
-        _out_path = args.out
     try:
+        if args.output_dir:
+            os.makedirs(args.output_dir, exist_ok=True)
+            _ext_map = {"json": "json", "csv": "csv", "stix": "json",
+                        "misp": "json", "md": "md"}
+            _out_path = os.path.join(args.output_dir,
+                                     f"{_job_id}.{_ext_map.get(fmt, 'txt')}")
+        else:
+            _out_path = args.out
         if fmt == "json":
             out_payload = json.dumps({
                 "query": args.query,
