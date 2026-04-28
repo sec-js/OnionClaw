@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "onionclaw"
+version = "2.1.13"
+description = "Dark web OSINT toolkit — full Tor access for AI agents and security researchers"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "requests[socks]~=2.32.0",
+    "beautifulsoup4~=4.12.0",
+    "python-dotenv~=1.0.0",
+    "stem~=1.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest~=8.3.0",
+    "pytest-cov~=5.0.0",
+    "ruff~=0.8.0",
+    "mypy~=1.13.0",
+    "types-requests~=2.32.0",
+    "types-beautifulsoup4~=4.12.0",
+]
+
+# ── ruff (lint + format) ──────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long — handled by formatter
+    "B007",  # loop variable not used in loop body (common in CLI scripts)
+    "SIM108", # ternary instead of if/else — not always clearer
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["_bootstrap"]
+
+# ── mypy ──────────────────────────────────────────────────────────
+
+[tool.mypy]
+python_version = "3.9"
+strict = false
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+files = ["_bootstrap.py"]
+
+# ── pytest ────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --tb=short"
+
+# ── coverage ──────────────────────────────────────────────────────
+
+[tool.coverage.run]
+source = ["_bootstrap"]
+omit   = ["tests/*", "sicry.py", "setup.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under   = 70

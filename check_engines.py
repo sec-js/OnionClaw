@@ -3,7 +3,7 @@
 # Copyright (c) 2026 JacobJandon — https://github.com/JacobJandon/OnionClaw
 """
 OnionClaw — check_engines.py
-Ping all 12 dark web search engines via Tor and report status + latency.
+Ping all dark web search engines via Tor and report status + latency.
 
 Usage:
   python3 check_engines.py                      # live ping (15-30 s)
@@ -11,30 +11,16 @@ Usage:
   python3 check_engines.py --json               # machine-readable output
   python3 check_engines.py --version
 """
-import sys, os, json, time, argparse
+import json
+import sys
+import time
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+from _bootstrap import import_sicry, setup_logging, validate_env
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
+sicry = import_sicry()
 
-try:
-    import sicry
-except Exception as _e:
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+import argparse
+import os
 
 _ENGINES_CACHE_FILE = "/tmp/onionclaw_engines_cache.json"
 
@@ -44,8 +30,15 @@ parser.add_argument("--version", action="version",
 parser.add_argument("--cached", type=int, default=0, metavar="MINUTES",
                     help="Reuse last engine-check result if it is less than MINUTES old "
                          "(skips the 15-30 s live ping). 0 = always run live (default).")
-parser.add_argument("--json",   action="store_true", help="Output raw JSON only")
+parser.add_argument("--json",    action="store_true", help="Output raw JSON only")
+parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",   action="store_true", help="Enable debug logging")
 args = parser.parse_args()
+
+log = setup_logging(verbose=args.verbose, debug=args.debug)
+
+for warning in validate_env():
+    print(f"WARN: {warning}", file=sys.stderr)
 
 # ── --cached: load from file if fresh enough ──────────────────────
 results = None
@@ -62,21 +55,23 @@ if args.cached > 0 and os.path.exists(_ENGINES_CACHE_FILE):
                 print(f"(using cached results — {age_min}m {age_sec}s old; "
                       f"re-run without --cached to refresh)")
                 print()
+            log.debug("Using cached engine results (age=%.0fs)", age_seconds)
     except Exception:
         results = None  # corrupt cache — fall through to live ping
 
 if results is None:
     # Verify Tor is reachable before spending 15-30 s pinging engines
-    if not getattr(sicry, '_tor_port_open', lambda: True)():
-        host = getattr(sicry, 'TOR_SOCKS_HOST', '127.0.0.1')
-        port = getattr(sicry, 'TOR_SOCKS_PORT', 9050)
-        print(f"\u2717 Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
+    if not getattr(sicry, "_tor_port_open", lambda: True)():
+        host = getattr(sicry, "TOR_SOCKS_HOST", "127.0.0.1")
+        port = getattr(sicry, "TOR_SOCKS_PORT", 9050)
+        print(f"✗ Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
         print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
         sys.exit(1)
     if not args.json:
         print("Checking all dark web search engines via Tor...")
         print("(This takes ~15–30 seconds)")
         print()
+    log.debug("Calling sicry.check_search_engines()")
     results = sicry.check_search_engines()
     # Persist for future --cached calls
     try:
