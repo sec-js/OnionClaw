@@ -3,16 +3,10 @@ Unit tests for _bootstrap.py utilities.
 
 No Tor, no network, no sicry required.
 """
+
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from _bootstrap import (
     sanitise_llm_content,
@@ -22,8 +16,8 @@ from _bootstrap import (
     validate_url,
 )
 
-
 # ── validate_url ──────────────────────────────────────────────────
+
 
 class TestValidateUrl:
     def test_passthrough_http(self):
@@ -61,6 +55,7 @@ class TestValidateUrl:
 
 
 # ── validate_query ────────────────────────────────────────────────
+
 
 class TestValidateQuery:
     def test_valid_query(self):
@@ -102,11 +97,12 @@ class TestValidateQuery:
 
 # ── validate_env ──────────────────────────────────────────────────
 
+
 class TestValidateEnv:
     def test_clean_env(self, monkeypatch):
-        monkeypatch.setenv("TOR_SOCKS_PORT",   "9050")
+        monkeypatch.setenv("TOR_SOCKS_PORT", "9050")
         monkeypatch.setenv("TOR_CONTROL_PORT", "9051")
-        monkeypatch.setenv("TOR_TIMEOUT",      "45")
+        monkeypatch.setenv("TOR_TIMEOUT", "45")
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
         warnings = validate_env()
         assert warnings == []
@@ -127,13 +123,13 @@ class TestValidateEnv:
         assert any("LLM_PROVIDER" in w for w in warnings)
 
     def test_openai_missing_key(self, monkeypatch):
-        monkeypatch.setenv("LLM_PROVIDER",   "openai")
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
         monkeypatch.setenv("OPENAI_API_KEY", "")
         warnings = validate_env()
         assert any("OPENAI_API_KEY" in w for w in warnings)
 
     def test_anthropic_missing_key(self, monkeypatch):
-        monkeypatch.setenv("LLM_PROVIDER",      "anthropic")
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
         warnings = validate_env()
         assert any("ANTHROPIC_API_KEY" in w for w in warnings)
@@ -156,6 +152,7 @@ class TestValidateEnv:
 
 
 # ── sanitise_llm_content ──────────────────────────────────────────
+
 
 class TestSanitiseLlmContent:
     def test_passthrough_clean(self):
@@ -200,20 +197,24 @@ class TestSanitiseLlmContent:
 
 # ── setup_logging ──────────────────────────────────────────────────
 
+
 class TestSetupLogging:
     def test_returns_logger(self):
         import logging
+
         logger = setup_logging()
         assert isinstance(logger, logging.Logger)
 
     def test_debug_mode(self):
         import logging
+
         setup_logging(debug=True)
         root = logging.getLogger()
         assert root.level == logging.DEBUG
 
     def test_verbose_mode(self):
         import logging
+
         setup_logging(verbose=True)
         root = logging.getLogger()
         assert root.level == logging.INFO

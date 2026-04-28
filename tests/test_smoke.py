@@ -4,11 +4,12 @@ Smoke tests for all OnionClaw CLI scripts.
 Runs each script with --help and --version via subprocess.
 No Tor, no network, no LLM required — these flags exit before any I/O.
 """
+
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-import os
 
 import pytest
 

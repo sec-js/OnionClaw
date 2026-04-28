@@ -7,6 +7,7 @@ Shared bootstrap utilities for OnionClaw CLI scripts.
 Import at the top of each script instead of repeating the env-load,
 sicry-import, and validation boilerplate inline.
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,13 +26,15 @@ if SKILL_DIR not in sys.path:
 _env_path = os.path.join(SKILL_DIR, ".env")
 if os.path.exists(_env_path):
     try:
-        from dotenv import load_dotenv  # type: ignore[import-untyped]
+        from dotenv import load_dotenv
+
         load_dotenv(_env_path, override=False)
     except ImportError:
         pass
 
 
 # ── logging ───────────────────────────────────────────────────────
+
 
 def setup_logging(verbose: bool = False, debug: bool = False) -> logging.Logger:
     """Configure root logger and return the onionclaw logger."""
@@ -49,10 +52,12 @@ def setup_logging(verbose: bool = False, debug: bool = False) -> logging.Logger:
 
 # ── sicry import ──────────────────────────────────────────────────
 
+
 def import_sicry() -> Any:
     """Import and return the sicry module, exiting with a clear error on failure."""
     try:
-        import sicry  # type: ignore[import-untyped]
+        import sicry
+
         return sicry
     except Exception as exc:
         msg = str(exc)

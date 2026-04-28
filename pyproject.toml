@@ -62,6 +62,10 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 files = ["_bootstrap.py"]
 
+[[tool.mypy.overrides]]
+module = "sicry"
+ignore_errors = true
+
 # ── pytest ────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
