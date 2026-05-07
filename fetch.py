@@ -7,31 +7,17 @@ Fetch any URL or .onion hidden service through Tor.
 
 Usage:
   python3 fetch.py --url "http://example.onion"
-  python3 fetch.py --url "http://example.onion" --links  python3 fetch.py --url "http://example.onion" --json   # machine-readable only"""
-import sys, os, json, argparse
+  python3 fetch.py --url "http://example.onion" --links
+  python3 fetch.py --url "http://example.onion" --json   # machine-readable only
+"""
+import json
+import sys
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+from _bootstrap import import_sicry, setup_logging, validate_env, validate_url
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
+sicry = import_sicry()
 
-try:
-    import sicry
-except Exception as _e:
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+import argparse
 
 parser = argparse.ArgumentParser(description="Fetch any URL via Tor")
 parser.add_argument("--version",     action="version",
@@ -39,24 +25,29 @@ parser.add_argument("--version",     action="version",
 parser.add_argument("--url",         required=True, help="URL or .onion address to fetch")
 parser.add_argument("--links",       action="store_true", help="Print all extracted links")
 parser.add_argument("--json",        action="store_true", help="Output raw JSON only")
-parser.add_argument("--clear-cache", action="store_true", help="Delete all cached fetch results before running")
+parser.add_argument("--clear-cache", action="store_true",
+                    help="Delete all cached fetch results before running")
+parser.add_argument("--verbose",     action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",       action="store_true", help="Enable debug logging")
 args = parser.parse_args()
+
+log = setup_logging(verbose=args.verbose, debug=args.debug)
+
+for warning in validate_env():
+    print(f"WARN: {warning}", file=sys.stderr)
 
 if args.clear_cache:
     n = sicry.clear_cache()
     print(f"Cleared {n} cached fetch result(s).")
 
-url = args.url
-if not url.startswith(("http://", "https://")):
-    url = "http://" + url
-
+url = validate_url(args.url)
 is_onion = ".onion" in url
 
 # Verify Tor is reachable before attempting to fetch
-if not getattr(sicry, '_tor_port_open', lambda: True)():
-    host = getattr(sicry, 'TOR_SOCKS_HOST', '127.0.0.1')
-    port = getattr(sicry, 'TOR_SOCKS_PORT', 9050)
-    print(f"\u2717 Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
+if not getattr(sicry, "_tor_port_open", lambda: True)():
+    host = getattr(sicry, "TOR_SOCKS_HOST", "127.0.0.1")
+    port = getattr(sicry, "TOR_SOCKS_PORT", 9050)
+    print(f"✗ Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
     print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
     sys.exit(1)
 
@@ -65,6 +56,7 @@ if not args.json:
     print(f"Fetching {'[.onion]' if is_onion else '[clearnet via Tor]'}: {url}")
     print()
 
+log.debug("Calling sicry.fetch(%r)", url)
 result = sicry.fetch(url)
 
 if args.json:
