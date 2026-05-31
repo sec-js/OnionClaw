@@ -19,28 +19,16 @@ Usage:
 """
 import sys, os, argparse, json, uuid, time as _time
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+from _bootstrap import (
+    SKILL_DIR as _skill_dir,
+    import_sicry,
+    sanitise_llm_content,
+    setup_logging,
+    validate_env,
+    validate_query,
+)
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
-
-try:
-    import sicry
-except Exception as _e:
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+sicry = import_sicry()
 
 MODES = ["threat_intel", "ransomware", "personal_identity", "corporate"]
 
@@ -126,7 +114,16 @@ parser.add_argument("--output-dir",    default=None, metavar="DIR",
                     help="Write output to DIR/<job_id>.<ext> instead of --out (batch-friendly)")
 parser.add_argument("--watch-clear-all", action="store_true",
                     help="Disable ALL active watch jobs at once and exit")
+parser.add_argument("--dry-run",      action="store_true",
+                    help="Check Tor + engines then print execution plan without searching or scraping")
+parser.add_argument("--verbose",      action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",        action="store_true", help="Enable debug logging")
 args = parser.parse_args()
+
+log = setup_logging(verbose=args.verbose, debug=args.debug)
+
+for _env_warn in validate_env():
+    print(f"WARN: {_env_warn}", file=sys.stderr)
 
 # ── BUG-4: warn if --interval used without --watch ─────────────────────────
 if args.interval != 6.0 and not args.watch and not args.watch_check:
@@ -487,9 +484,8 @@ if args.resume:
         print(f"[resume] Warning: could not load checkpoint — {_re}", file=sys.stderr)
 
 # ── UX-2: clean error for empty --query before argparse prints the usage block
-if args.query is not None and not args.query.strip():
-    print("ERROR: --query cannot be empty.", file=sys.stderr)
-    sys.exit(1)
+if args.query is not None:
+    args.query = validate_query(args.query)
 
 # ── --query required from here ────────────────────────────────────────────
 if not args.query:
@@ -598,6 +594,34 @@ else:
             print(f"  NOTE: --engines overrides mode '{args.mode}' routing "
                   f"(mode default: {', '.join(mode_engines)})")
     _step(2, TOTAL, f"Using specified engines: {', '.join(live_names)}")
+
+# ── --dry-run: print plan and exit after connectivity checks ──────
+if args.dry_run:
+    print()
+    print("=" * 55)
+    print("DRY-RUN — execution plan (no searches or scrapes)")
+    print("=" * 55)
+    print(f"  Query     : {args.query!r}")
+    print(f"  Mode      : {args.mode}")
+    print(f"  Engines   : {', '.join(live_names)}")
+    print(f"  Max results: {args.max}")
+    print(f"  Scrape    : {args.scrape} pages")
+    print(f"  No-LLM    : {args.no_llm}")
+    print(f"  Format    : {args.format}")
+    if args.out:
+        print(f"  Output    : {args.out}")
+    if args.output_dir:
+        print(f"  Output dir: {args.output_dir}")
+    print()
+    print("Steps that would run:")
+    print("  [3] Refine query via LLM" + (" — SKIPPED (--no-llm)" if args.no_llm else ""))
+    print(f"  [4] Search {len(live_names)} engine(s)")
+    print(f"  [5] Filter/rank results" + (" via BM25 (--no-llm)" if args.no_llm else " via LLM"))
+    print(f"  [6] Scrape top {args.scrape} pages" + (" — SKIPPED (--scrape 0)" if args.scrape == 0 else ""))
+    print(f"  [7] Analyse via " + ("no-LLM entity extraction" if args.no_llm else f"LLM ({args.mode} mode)"))
+    print()
+    print("[dry-run] No network calls made beyond Tor + engine health checks.")
+    sys.exit(0)
 
 # ─────────────────────────────────────────────────────────────────
 # Step 3: Refine query (LLM step — skipped with --no-llm)
@@ -738,9 +762,15 @@ if not pages:
 # ─────────────────────────────────────────────────────────────────
 combined = "\n\n".join(f"[SOURCE: {url}]\n{text}" for url, text in pages.items())
 
+# Sanitise scraped dark-web content before passing to LLM to mitigate prompt injection
+_max_chars = int(os.environ.get("SICRY_MAX_CHARS", "8000"))
+combined_safe = sanitise_llm_content(combined, max_chars=_max_chars * max(1, len(pages)))
+if combined_safe != combined:
+    log.info("Pipeline content sanitised before LLM submission")
+
 if NO_LLM:
     _step(7, TOTAL, "No-LLM entity/keyword extraction (analyze_nollm)")
-    report = sicry.analyze_nollm(combined, query=refined)
+    report = sicry.analyze_nollm(combined_safe, query=refined)
     header_label = "ANALYSIS REPORT (no-LLM)"
 else:
     cached_report = _ckpt("ask")
@@ -751,7 +781,7 @@ else:
     else:
         _step(7, TOTAL, f"OSINT analysis — mode: {args.mode}")
         report = sicry.ask(
-            combined,
+            combined_safe,
             query=refined,
             mode=args.mode,
             custom_instructions=args.custom,
