@@ -12,42 +12,42 @@ Usage:
 
 Modes: threat_intel (default), ransomware, personal_identity, corporate
 """
-import sys, os, argparse
+import os
+import sys
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+from _bootstrap import (
+    SKILL_DIR,
+    import_sicry,
+    sanitise_llm_content,
+    setup_logging,
+    validate_env,
+)
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
+sicry = import_sicry()
 
-try:
-    import sicry
-except Exception as _e:
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-        print("       Make sure sicry.py is in the OnionClaw folder.")
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+import argparse
 
 MODES = ["threat_intel", "ransomware", "personal_identity", "corporate"]
 
 parser = argparse.ArgumentParser(description="OSINT analysis of dark web content")
+parser.add_argument("--version", action="version",
+                    version=f"OnionClaw ask {getattr(sicry, '__version__', '?')}")
 parser.add_argument("--query",   default="", help="Investigation query / topic")
 parser.add_argument("--mode",    default="threat_intel", choices=MODES,
                     help="Analysis mode (default: threat_intel)")
 parser.add_argument("--content", default=None, help="Content to analyse (inline string)")
 parser.add_argument("--file",    default=None, help="File containing content to analyse")
 parser.add_argument("--custom",  default="", help="Custom instructions appended to the mode prompt")
+parser.add_argument("--no-sanitise", action="store_true",
+                    help="Skip prompt-injection sanitisation of input content")
+parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",   action="store_true", help="Enable debug logging")
 args = parser.parse_args()
+
+log = setup_logging(verbose=args.verbose, debug=args.debug)
+
+for warning in validate_env():
+    print(f"WARN: {warning}", file=sys.stderr)
 
 # ── Load content ──────────────────────────────────────────────────
 if args.file:
@@ -73,6 +73,16 @@ if not content.strip():
     print("ERROR: content is empty")
     sys.exit(1)
 
+# Sanitise scraped content to mitigate prompt injection from dark web data
+max_chars = int(os.environ.get("SICRY_MAX_CHARS", "8000"))
+if args.no_sanitise:
+    log.debug("Prompt-injection sanitisation disabled via --no-sanitise")
+    safe_content = content[:max_chars]
+else:
+    safe_content = sanitise_llm_content(content, max_chars=max_chars)
+    if safe_content != content[:max_chars]:
+        log.info("Content sanitised: potential prompt-injection patterns filtered")
+
 print(f"Query  : {args.query or '(none)'}")
 print(f"Mode   : {args.mode}")
 if args.custom:
@@ -81,8 +91,9 @@ print()
 print("Analysing via LLM...")
 print()
 
+log.debug("Calling sicry.ask(mode=%r, query=%r)", args.mode, args.query)
 report = sicry.ask(
-    content,
+    safe_content,
     query=args.query,
     mode=args.mode,
     custom_instructions=args.custom,
@@ -91,7 +102,7 @@ report = sicry.ask(
 if report.startswith("[SICRY:"):
     print("✗ LLM error:", report)
     print()
-    print("  Set LLM_PROVIDER and API key in", os.path.join(_skill_dir, ".env"))
+    print("  Set LLM_PROVIDER and API key in", os.path.join(SKILL_DIR, ".env"))
     print("  Options: LLM_PROVIDER=openai|anthropic|gemini|ollama|llamacpp")
     sys.exit(1)
 
