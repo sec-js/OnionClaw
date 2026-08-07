@@ -5,45 +5,37 @@
 OnionClaw — renew.py
 Rotate the Tor circuit and get a new exit node / identity.
 """
-import sys, os, json
+import json
+import sys
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+from _bootstrap import import_sicry, setup_logging, validate_env
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
+sicry = import_sicry()
 
-try:
-    import sicry
-except Exception as _e:
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+import argparse
 
-import argparse as _ap
-_parser = _ap.ArgumentParser(
+parser = argparse.ArgumentParser(
     description="OnionClaw — rotate Tor circuit and get a new exit identity")
-_parser.add_argument("--version", action="version",
-                     version=f"OnionClaw renew {getattr(sicry, '__version__', '?')}")
-_parser.add_argument("--json", action="store_true",
-                     help="Print only the JSON result, no human-readable output")
-_args = _parser.parse_args()
+parser.add_argument("--version", action="version",
+                    version=f"OnionClaw renew {getattr(sicry, '__version__', '?')}")
+parser.add_argument("--json",    action="store_true",
+                    help="Print only the JSON result, no human-readable output")
+parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",   action="store_true", help="Enable debug logging")
+args = parser.parse_args()
 
-if not _args.json:
+log = setup_logging(verbose=args.verbose, debug=args.debug)
+
+for warning in validate_env():
+    print(f"WARN: {warning}", file=sys.stderr)
+
+if not args.json:
     print("Rotating Tor circuit...")
+
+log.debug("Calling sicry.renew_identity()")
 result = sicry.renew_identity()
 
-if _args.json:
+if args.json:
     print(json.dumps(result, indent=2))
     sys.exit(0 if result["success"] else 1)
 
