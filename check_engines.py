@@ -11,9 +11,12 @@ Usage:
   python3 check_engines.py --json               # machine-readable output
   python3 check_engines.py --version
 """
+from __future__ import annotations
+
 import json
 import sys
 import time
+from typing import Any, Optional
 
 from _bootstrap import import_sicry, setup_logging, validate_env
 
@@ -41,7 +44,7 @@ for warning in validate_env():
     print(f"WARN: {warning}", file=sys.stderr)
 
 # ── --cached: load from file if fresh enough ──────────────────────
-results = None
+results: Optional[list[dict[str, Any]]] = None
 if args.cached > 0 and os.path.exists(_ENGINES_CACHE_FILE):
     try:
         with open(_ENGINES_CACHE_FILE, "r", encoding="utf-8") as f:
@@ -72,7 +75,7 @@ if results is None:
         print("(This takes ~15–30 seconds)")
         print()
     log.debug("Calling sicry.check_search_engines()")
-    results = sicry.check_search_engines()
+    results: list[dict[str, Any]] = sicry.check_search_engines()
     # Persist for future --cached calls
     try:
         with open(_ENGINES_CACHE_FILE, "w", encoding="utf-8") as f:

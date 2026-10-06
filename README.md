@@ -228,6 +228,19 @@ OPENAI_API_KEY=sk-...
 
 ## All seven commands
 
+### Common flags
+
+Every script accepts these flags:
+
+| Flag | Description |
+|---|---|
+| `--verbose` | Enable INFO-level log output to stderr |
+| `--debug` | Enable DEBUG-level log output to stderr (more detail than `--verbose`) |
+| `--json` | Output machine-readable JSON only (no human-readable headers or progress text) |
+| `--version` | Print `OnionClaw <script> <sicry-version>` and exit |
+
+---
+
 ### `check_tor.py` — verify Tor
 
 ```bash
@@ -328,9 +341,23 @@ python3 fetch.py --url "http://example.onion/page" --links
 
 # JSON output only
 python3 fetch.py --url "http://example.onion" --json
+
+# Retry up to 3 times with exponential backoff (1 s, 2 s, 4 s)
+python3 fetch.py --url "http://example.onion" --retries 3
+
+# Verbose logging
+python3 fetch.py --url "http://example.onion" --verbose
 ```
 
 Returns: title, text content (up to 8000 chars), extracted links, HTTP status code. A status of `0` means the hidden service is unreachable or offline.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--retries N` | `0` | Retry failed fetches up to N times with exponential backoff (delays: 1 s, 2 s, 4 s, …) |
+| `--links` | off | Include extracted links in output |
+| `--json` | off | Machine-readable JSON only |
+| `--verbose` | off | INFO-level log output |
+| `--debug` | off | DEBUG-level log output |
 
 ---
 
@@ -360,9 +387,26 @@ python3 ask.py \
   --mode threat_intel \
   --content "..." \
   --custom "Focus on cryptocurrency wallet addresses only"
+
+# Machine-readable JSON output
+python3 ask.py --query "lockbit" --mode ransomware --content "..." --json
+
+# Skip LLM sanitisation of output
+python3 ask.py --query "..." --mode threat_intel --content "..." --no-sanitise
+
+# Print version
+python3 ask.py --version
 ```
 
 **Modes:** `threat_intel` · `ransomware` · `personal_identity` · `corporate` — see [Analysis modes](#analysis-modes).
+
+| Flag | Description |
+|---|---|
+| `--json` | Print `{"query", "mode", "report"}` as JSON instead of human-readable text |
+| `--no-sanitise` | Skip LLM content sanitisation pass on the final report |
+| `--version` | Print OnionClaw version and exit |
+| `--verbose` | INFO-level log output |
+| `--debug` | DEBUG-level log output |
 
 ---
 
@@ -403,12 +447,28 @@ python3 pipeline.py \
 **Steps 1–6 work fully without an LLM key.** Only steps 3, 5, and 7 use the LLM — they fall back gracefully when no key is set, printing what was collected so far.
 
 ```bash
+# Verbose / debug logging
+python3 pipeline.py --query "acme.com" --verbose
+python3 pipeline.py --query "acme.com" --debug
+
+# Dry run — show what would happen without network calls or LLM usage
+python3 pipeline.py --query "acme.com" --dry-run
+
 # --clear-cache: discard cached fetch results before this run
 python3 pipeline.py --query "fresh data" --clear-cache
 
 # --version: print OnionClaw version
 python3 pipeline.py --version
 ```
+
+| Flag | Description |
+|---|---|
+| `--verbose` | INFO-level log output to stderr |
+| `--debug` | DEBUG-level log output to stderr |
+| `--dry-run` | Print what each step would do without making network or LLM calls |
+| `--out FILE` | Write the final report to FILE (parent directory must exist and be writable; validated before any network calls) |
+| `--clear-cache` | Discard cached fetch results and force a fresh run |
+| `--no-sanitise` | Skip LLM content sanitisation pass |
 
 ---
 

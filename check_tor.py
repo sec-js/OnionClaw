@@ -5,8 +5,11 @@
 OnionClaw — check_tor.py
 Verify Tor is running and return the exit IP address.
 """
+from __future__ import annotations
+
 import json
 import sys
+from typing import Any
 
 from _bootstrap import import_sicry, setup_logging, validate_env
 
@@ -30,7 +33,7 @@ for warning in validate_env():
     print(f"WARN: {warning}", file=sys.stderr)
 
 log.debug("Calling sicry.check_tor()")
-result = sicry.check_tor()
+result: dict[str, Any] = sicry.check_tor()
 
 if args.json:
     print(json.dumps(result, indent=2))

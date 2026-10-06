@@ -9,9 +9,13 @@ Usage:
   python3 ask.py --query "QUERY" --mode MODE --content "RAW TEXT"
   python3 ask.py --query "QUERY" --mode MODE --file /path/to/content.txt
   echo "content" | python3 ask.py --query "QUERY" --mode MODE
+  python3 ask.py --query "QUERY" --mode MODE --content "..." --json
 
 Modes: threat_intel (default), ransomware, personal_identity, corporate
 """
+from __future__ import annotations
+
+import json
 import os
 import sys
 
@@ -40,6 +44,8 @@ parser.add_argument("--file",    default=None, help="File containing content to 
 parser.add_argument("--custom",  default="", help="Custom instructions appended to the mode prompt")
 parser.add_argument("--no-sanitise", action="store_true",
                     help="Skip prompt-injection sanitisation of input content")
+parser.add_argument("--json",    action="store_true",
+                    help="Output raw JSON {query, mode, report} instead of human-readable text")
 parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 parser.add_argument("--debug",   action="store_true", help="Enable debug logging")
 args = parser.parse_args()
@@ -83,13 +89,14 @@ else:
     if safe_content != content[:max_chars]:
         log.info("Content sanitised: potential prompt-injection patterns filtered")
 
-print(f"Query  : {args.query or '(none)'}")
-print(f"Mode   : {args.mode}")
-if args.custom:
-    print(f"Custom : {args.custom[:80]}")
-print()
-print("Analysing via LLM...")
-print()
+if not args.json:
+    print(f"Query  : {args.query or '(none)'}")
+    print(f"Mode   : {args.mode}")
+    if args.custom:
+        print(f"Custom : {args.custom[:80]}")
+    print()
+    print("Analysing via LLM...")
+    print()
 
 log.debug("Calling sicry.ask(mode=%r, query=%r)", args.mode, args.query)
 report = sicry.ask(
@@ -100,10 +107,16 @@ report = sicry.ask(
 )
 
 if report.startswith("[SICRY:"):
-    print("✗ LLM error:", report)
-    print()
-    print("  Set LLM_PROVIDER and API key in", os.path.join(SKILL_DIR, ".env"))
-    print("  Options: LLM_PROVIDER=openai|anthropic|gemini|ollama|llamacpp")
+    if args.json:
+        print(json.dumps({"error": report, "query": args.query, "mode": args.mode}))
+    else:
+        print("✗ LLM error:", report)
+        print()
+        print("  Set LLM_PROVIDER and API key in", os.path.join(SKILL_DIR, ".env"))
+        print("  Options: LLM_PROVIDER=openai|anthropic|gemini|ollama|llamacpp")
     sys.exit(1)
 
-print(report)
+if args.json:
+    print(json.dumps({"query": args.query, "mode": args.mode, "report": report}, indent=2))
+else:
+    print(report)

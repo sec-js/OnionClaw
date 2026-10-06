@@ -5,8 +5,11 @@
 OnionClaw — renew.py
 Rotate the Tor circuit and get a new exit node / identity.
 """
+from __future__ import annotations
+
 import json
 import sys
+from typing import Any
 
 from _bootstrap import import_sicry, setup_logging, validate_env
 
@@ -33,7 +36,7 @@ if not args.json:
     print("Rotating Tor circuit...")
 
 log.debug("Calling sicry.renew_identity()")
-result = sicry.renew_identity()
+result: dict[str, Any] = sicry.renew_identity()
 
 if args.json:
     print(json.dumps(result, indent=2))

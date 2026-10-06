@@ -95,6 +95,27 @@ jobs:
       - name: Run tests with coverage
         run: pytest tests/ --cov=_bootstrap --cov-report=term-missing
 
+  # ── changelog draft (non-blocking) ──────────────────────────────
+  changelog:
+    name: Draft CHANGELOG entries
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Draft changelog entries (print to log)
+        # Non-blocking: shows what would go in CHANGELOG for the maintainer.
+        # Run scripts/draft_changelog.py --output CHANGELOG.md to write it.
+        run: python3 scripts/draft_changelog.py || true
+
   # ── sicry.py sync drift check ─────────────────────────────────────
   sicry-sync:
     name: Check bundled sicry.py version

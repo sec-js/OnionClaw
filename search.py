@@ -11,8 +11,11 @@ Usage:
   python3 search.py --query "TERM" --engines Ahmia Tor66 Ahmia-clearnet
   python3 search.py --query "TERM" --json          # machine-readable output only
 """
+from __future__ import annotations
+
 import json
 import sys
+from typing import Any, Optional
 
 from _bootstrap import import_sicry, setup_logging, validate_env, validate_query
 
@@ -54,7 +57,7 @@ if args.engines:
             file=sys.stderr,
         )
         sys.exit(1)
-    engines_to_use = valid
+    engines_to_use: Optional[list[str]] = valid
 else:
     engines_to_use = None
 
@@ -75,7 +78,7 @@ if not getattr(sicry, "_tor_port_open", lambda: True)():
     sys.exit(1)
 
 log.debug("Calling sicry.search(query=%r, engines=%r, max_results=%d)", query, engines_to_use, args.max)
-results = sicry.search(query, engines=engines_to_use, max_results=args.max)
+results: list[dict[str, Any]] = sicry.search(query, engines=engines_to_use, max_results=args.max)
 
 if args.json:
     print(json.dumps(results, indent=2))

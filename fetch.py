@@ -9,9 +9,14 @@ Usage:
   python3 fetch.py --url "http://example.onion"
   python3 fetch.py --url "http://example.onion" --links
   python3 fetch.py --url "http://example.onion" --json   # machine-readable only
+  python3 fetch.py --url "http://example.onion" --retries 3
 """
+from __future__ import annotations
+
 import json
 import sys
+import time as _time
+from typing import Any
 
 from _bootstrap import import_sicry, setup_logging, validate_env, validate_url
 
@@ -27,6 +32,8 @@ parser.add_argument("--links",       action="store_true", help="Print all extrac
 parser.add_argument("--json",        action="store_true", help="Output raw JSON only")
 parser.add_argument("--clear-cache", action="store_true",
                     help="Delete all cached fetch results before running")
+parser.add_argument("--retries",     type=int, default=0, metavar="N",
+                    help="Retry on failure up to N times with exponential backoff (default: 0)")
 parser.add_argument("--verbose",     action="store_true", help="Enable verbose logging")
 parser.add_argument("--debug",       action="store_true", help="Enable debug logging")
 args = parser.parse_args()
@@ -56,8 +63,28 @@ if not args.json:
     print(f"Fetching {'[.onion]' if is_onion else '[clearnet via Tor]'}: {url}")
     print()
 
+def _fetch_with_retries(target_url: str, retries: int) -> dict[str, Any]:
+    """Call sicry.fetch with up to `retries` additional attempts on failure."""
+    last: dict[str, Any] = {}
+    for attempt in range(max(1, retries + 1)):
+        last = sicry.fetch(target_url)
+        if not last.get("error"):
+            return last
+        if attempt < retries:
+            delay: int = 2 ** attempt
+            log.debug(
+                "Fetch attempt %d/%d failed: %s — retrying in %ds",
+                attempt + 1, retries + 1, last["error"], delay,
+            )
+            print(
+                f"  Attempt {attempt + 1}/{retries + 1} failed — retrying in {delay}s...",
+                file=sys.stderr,
+            )
+            _time.sleep(delay)
+    return last
+
 log.debug("Calling sicry.fetch(%r)", url)
-result = sicry.fetch(url)
+result: dict[str, Any] = _fetch_with_retries(url, args.retries)
 
 if args.json:
     print(json.dumps(result, indent=2))
