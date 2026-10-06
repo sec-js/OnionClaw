@@ -7,31 +7,22 @@ Fetch any URL or .onion hidden service through Tor.
 
 Usage:
   python3 fetch.py --url "http://example.onion"
-  python3 fetch.py --url "http://example.onion" --links  python3 fetch.py --url "http://example.onion" --json   # machine-readable only"""
-import sys, os, json, argparse
+  python3 fetch.py --url "http://example.onion" --links
+  python3 fetch.py --url "http://example.onion" --json   # machine-readable only
+  python3 fetch.py --url "http://example.onion" --retries 3
+"""
+from __future__ import annotations
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+import json
+import sys
+import time as _time
+from typing import Any
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
+from _bootstrap import import_sicry, setup_logging, validate_env, validate_url
 
-try:
-    import sicry
-except Exception as _e:
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+sicry = import_sicry()
+
+import argparse
 
 parser = argparse.ArgumentParser(description="Fetch any URL via Tor")
 parser.add_argument("--version",     action="version",
@@ -39,24 +30,31 @@ parser.add_argument("--version",     action="version",
 parser.add_argument("--url",         required=True, help="URL or .onion address to fetch")
 parser.add_argument("--links",       action="store_true", help="Print all extracted links")
 parser.add_argument("--json",        action="store_true", help="Output raw JSON only")
-parser.add_argument("--clear-cache", action="store_true", help="Delete all cached fetch results before running")
+parser.add_argument("--clear-cache", action="store_true",
+                    help="Delete all cached fetch results before running")
+parser.add_argument("--retries",     type=int, default=0, metavar="N",
+                    help="Retry on failure up to N times with exponential backoff (default: 0)")
+parser.add_argument("--verbose",     action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",       action="store_true", help="Enable debug logging")
 args = parser.parse_args()
+
+log = setup_logging(verbose=args.verbose, debug=args.debug)
+
+for warning in validate_env():
+    print(f"WARN: {warning}", file=sys.stderr)
 
 if args.clear_cache:
     n = sicry.clear_cache()
     print(f"Cleared {n} cached fetch result(s).")
 
-url = args.url
-if not url.startswith(("http://", "https://")):
-    url = "http://" + url
-
+url = validate_url(args.url)
 is_onion = ".onion" in url
 
 # Verify Tor is reachable before attempting to fetch
-if not getattr(sicry, '_tor_port_open', lambda: True)():
-    host = getattr(sicry, 'TOR_SOCKS_HOST', '127.0.0.1')
-    port = getattr(sicry, 'TOR_SOCKS_PORT', 9050)
-    print(f"\u2717 Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
+if not getattr(sicry, "_tor_port_open", lambda: True)():
+    host = getattr(sicry, "TOR_SOCKS_HOST", "127.0.0.1")
+    port = getattr(sicry, "TOR_SOCKS_PORT", 9050)
+    print(f"✗ Tor SOCKS port {host}:{port} is not reachable.", file=sys.stderr)
     print("  Start Tor first:  apt install tor && systemctl start tor", file=sys.stderr)
     sys.exit(1)
 
@@ -65,7 +63,28 @@ if not args.json:
     print(f"Fetching {'[.onion]' if is_onion else '[clearnet via Tor]'}: {url}")
     print()
 
-result = sicry.fetch(url)
+def _fetch_with_retries(target_url: str, retries: int) -> dict[str, Any]:
+    """Call sicry.fetch with up to `retries` additional attempts on failure."""
+    last: dict[str, Any] = {}
+    for attempt in range(max(1, retries + 1)):
+        last = sicry.fetch(target_url)
+        if not last.get("error"):
+            return last
+        if attempt < retries:
+            delay: int = 2 ** attempt
+            log.debug(
+                "Fetch attempt %d/%d failed: %s — retrying in %ds",
+                attempt + 1, retries + 1, last["error"], delay,
+            )
+            print(
+                f"  Attempt {attempt + 1}/{retries + 1} failed — retrying in {delay}s...",
+                file=sys.stderr,
+            )
+            _time.sleep(delay)
+    return last
+
+log.debug("Calling sicry.fetch(%r)", url)
+result: dict[str, Any] = _fetch_with_retries(url, args.retries)
 
 if args.json:
     print(json.dumps(result, indent=2))

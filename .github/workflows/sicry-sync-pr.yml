@@ -1,0 +1,71 @@
+name: Sync SICRY™ (weekly)
+
+on:
+  schedule:
+    # Every Monday at 06:17 UTC (jitter avoids the :00 traffic spike)
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install minimal deps
+        run: pip install requests
+
+      - name: Check for SICRY™ drift
+        id: drift
+        run: |
+          python3 sync_sicry.py --check-bundled
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Sync sicry.py to latest upstream
+        if: steps.drift.outputs.exit_code != '0'
+        run: python3 sync_sicry.py
+
+      - name: Open PR if sicry.py changed
+        if: steps.drift.outputs.exit_code != '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet sicry.py; then
+            echo "sicry.py unchanged after sync — nothing to PR."
+            exit 0
+          fi
+          BRANCH="auto/sync-sicry-$(date +%Y%m%d)"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git checkout -b "$BRANCH"
+          git add sicry.py
+          git commit -m "chore: sync bundled sicry.py to latest upstream SICRY™"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "chore: sync bundled sicry.py to latest SICRY™" \
+            --body "$(cat <<'EOF'
+## Summary
+
+- Automated weekly sync of the bundled `sicry.py` to the latest upstream [SICRY™](https://github.com/JacobJandon/Sicry) release.
+- Triggered by drift detected via \`sync_sicry.py --check-bundled\`.
+
+## Test plan
+
+- [ ] CI passes on this branch
+- [ ] Review the diff in \`sicry.py\` for any breaking API changes
+- [ ] If any OnionClaw script calls were removed/renamed in upstream, update them before merging
+EOF
+)" \
+            --draft

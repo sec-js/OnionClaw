@@ -5,45 +5,37 @@
 OnionClaw — check_tor.py
 Verify Tor is running and return the exit IP address.
 """
-import sys, os, json
+from __future__ import annotations
 
-# ── bootstrap ─────────────────────────────────────────────────────
-_skill_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _skill_dir)
+import json
+import sys
+from typing import Any
 
-_env = os.path.join(_skill_dir, ".env")
-if os.path.exists(_env):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(_env, override=False)
-    except ImportError:
-        pass
-# ──────────────────────────────────────────────────────────────────
+from _bootstrap import import_sicry, setup_logging, validate_env
 
-try:
-    import sicry
-except Exception as _e:
-    import traceback
-    if "sicry" in str(_e).lower() or "No module named 'sicry'" in str(_e):
-        print("ERROR: sicry.py not found in", _skill_dir)
-        print("       Make sure sicry.py is in the OnionClaw folder.")
-    else:
-        print("ERROR: failed to import sicry:", _e)
-        print("       Run:  pip install requests[socks] beautifulsoup4 python-dotenv stem")
-    sys.exit(1)
+sicry = import_sicry()
 
-import argparse as _ap
-_parser = _ap.ArgumentParser(
+import argparse
+
+parser = argparse.ArgumentParser(
     description="OnionClaw — verify Tor is running and show exit IP")
-_parser.add_argument("--version", action="version",
-                     version=f"OnionClaw check_tor {getattr(sicry, '__version__', '?')}")
-_parser.add_argument("--json", action="store_true",
-                     help="Print only the JSON result, no human-readable output")
-_args = _parser.parse_args()
+parser.add_argument("--version", action="version",
+                    version=f"OnionClaw check_tor {getattr(sicry, '__version__', '?')}")
+parser.add_argument("--json", action="store_true",
+                    help="Print only the JSON result, no human-readable output")
+parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+parser.add_argument("--debug",   action="store_true", help="Enable debug logging")
+args = parser.parse_args()
 
-result = sicry.check_tor()
+log = setup_logging(verbose=args.verbose, debug=args.debug)
 
-if _args.json:
+for warning in validate_env():
+    print(f"WARN: {warning}", file=sys.stderr)
+
+log.debug("Calling sicry.check_tor()")
+result: dict[str, Any] = sicry.check_tor()
+
+if args.json:
     print(json.dumps(result, indent=2))
     sys.exit(0 if result["tor_active"] else 1)
 
